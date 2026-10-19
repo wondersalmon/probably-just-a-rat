@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- Added manual GitHub release builds from an existing tag, with tag and package-version validation.
+- Updated development dependencies; kept Pixi 7 and disabled its automatic major updates.
+
 ## 0.1.0
 
 First public release for Foundry VTT 14.
