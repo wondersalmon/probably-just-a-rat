@@ -1,0 +1,44 @@
+name: GitHub release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check tag matches package version
+        run: node -e 'if (process.env.GITHUB_REF_NAME !== "v" + JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).version) process.exit(1)'
+      - run: npm run check:ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:ui
+      - run: npm run benchmark
+      - run: npm run build -- --release
+      - name: Publish GitHub assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          CHANNEL_ARGS=()
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            CHANNEL_ARGS=(--prerelease --latest=false)
+          fi
+          gh release create "${GITHUB_REF_NAME}" \
+            dist/module.json dist/probably-just-a-rat.zip dist/SHA256SUMS.txt \
+            --verify-tag --notes-file dist/release-notes.md \
+            --title "Probably Just a Rat ${GITHUB_REF_NAME}" \
+            "${CHANNEL_ARGS[@]}"

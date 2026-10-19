@@ -1,0 +1,62 @@
+.rat-memory-controls {
+  max-width: calc(100vw - 16px);
+}
+.rat-memory-controls .window-content {
+  padding: 8px;
+}
+.rat-controls-body {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.rat-controls-heading,
+.rat-controls-record,
+.rat-controls-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.rat-controls-heading > strong,
+.rat-controls-description {
+  flex: 1;
+  min-width: 0;
+}
+.rat-controls-heading > strong {
+  font-size: 12px;
+}
+.rat-controls-list {
+  max-height: min(320px, 50vh);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.rat-controls-record {
+  padding: 5px 0;
+  border-top: 1px solid var(--color-border-light-tertiary, #7775);
+}
+.rat-controls-description > strong,
+.rat-controls-description > small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rat-controls-description > strong {
+  font-size: 12px;
+}
+.rat-controls-description > small {
+  font-size: 10px;
+  opacity: 0.75;
+}
+.rat-memory-controls button.rat-controls-button {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  line-height: 1;
+}
+.rat-controls-empty {
+  margin: 8px 0;
+  font-size: 12px;
+  opacity: 0.75;
+}

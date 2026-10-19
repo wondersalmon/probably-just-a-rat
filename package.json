@@ -1,0 +1,37 @@
+{
+  "name": "probably-just-a-rat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Client-local last-seen token memory for Foundry VTT 14.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wondersalmon/probably-just-a-rat.git"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint scripts tools tests test-ui playwright.config.mjs",
+    "typecheck": "tsc -p jsconfig.json",
+    "test": "node tools/test-suite.mjs",
+    "test:coverage": "node tools/test-suite.mjs --coverage",
+    "test:ui": "playwright test",
+    "validate": "node tools/validate.mjs",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run validate",
+    "check:ci": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage && npm run validate",
+    "benchmark": "node tools/benchmark.mjs",
+    "build": "node tools/build.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "pixi.js": "7.4.3",
+    "archiver": "8.0.0",
+    "eslint": "10.11.0",
+    "globals": "17.12.0",
+    "prettier": "3.9.8",
+    "typescript": "7.0.2"
+  }
+}
