@@ -26,7 +26,7 @@
     "build": "node tools/build.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "1.63.0",
+    "@playwright/test": "1.64.1",
     "pixi.js": "7.4.3",
     "archiver": "8.0.0",
     "eslint": "10.12.0",
