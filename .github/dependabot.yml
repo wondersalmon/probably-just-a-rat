@@ -4,6 +4,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Match the Pixi 7 API used by the Foundry renderer fixtures.
+      - dependency-name: pixi.js
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
