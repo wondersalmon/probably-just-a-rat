@@ -3,12 +3,18 @@ import { MemoryStore } from "./core/memory-store.js";
 import {
   registerSettings,
   migrateOpacity,
-  migrateCaptions
+  migrateCaptions,
+  sceneRetainsMemory
 } from "./settings.js";
 import { ObservationTracker } from "./observation-tracker.js";
 import { addTokenOverride } from "./foundry/token-config.js";
+import { addSceneMemoryOptions } from "./foundry/scene-config.js";
 import { CombatMemoryPing } from "./combat-memory-ping.js";
-import { localize } from "./localization.js";
+import {
+  localize,
+  configureLocalization,
+  disposeLocalization
+} from "./localization.js";
 import { createMemoryAPI } from "./memory-api.js";
 import { SettingsPreview } from "./foundry/settings-preview.js";
 import { RatControlPanel } from "./foundry/control-panel.js";
@@ -37,26 +43,48 @@ export function installModule(host) {
   const clearMemory = () => tracker.clearMemory();
   const resetContext = () => tracker.reset();
   let disposed = false;
-  if (host.game.release.generation === 14)
-    hooks.push([
-      "getSceneControlButtons",
-      host.Hooks.on("getSceneControlButtons", controls => {
-        if (!disposed && host.game.release.generation === 14)
-          controlPanel.addTool(controls);
-      })
-    ]);
+  // Foundry imports modules before game.release is available. Register now,
+  // then check the generation when the scene controls are actually built.
+  const controlsHook = host.Hooks.on("getSceneControlButtons", controls => {
+    if (!disposed && host.game.release?.generation === 14)
+      controlPanel.addTool(controls);
+  });
+  hooks.push(["getSceneControlButtons", controlsHook]);
   const checkpoint = () => tracker.checkpoint(true);
+  const refreshLanguage = () => {
+    void configureLocalization(host)
+      .then(() => {
+        if (disposed) return;
+        settingsPreview.refreshLanguage();
+        tracker.renderer.refreshCaptions();
+        tracker.notifyMemory(true);
+        if (controlPanel.open) controlPanel.window?.render({ force: true });
+        host.ui.controls?.render?.({ force: true });
+      })
+      .catch(() => {
+        if (!disposed)
+          host.ui.notifications.warn(localize(host, "RAT.LanguageFailed"));
+      });
+  };
   const refreshAppearance = (key = "grayscale") => {
+    if (key === "language") {
+      refreshLanguage();
+      return;
+    }
     if (["memoryRounds", "memoryMinutes"].includes(key)) {
       tracker.updatePolicy();
       return;
     }
     if (key === "combatOnly") {
-      tracker.cache.clear();
-      tracker.reset();
+      if (sceneRetainsMemory(host.canvas?.scene)) tracker.schedule();
+      else {
+        tracker.cache.clear();
+        tracker.reset();
+      }
       return;
     }
-    if (["labels", "showNames", "showRounds"].includes(key))
+    if (key === "captionStyle") settingsPreview.refreshCaptionPolicy();
+    if (["labels", "captionStyle", "showNames", "showRounds"].includes(key))
       tracker.renderer.refreshCaptions();
     else tracker.renderer.rebuild();
     tracker.schedule();
@@ -70,7 +98,9 @@ export function installModule(host) {
       registerSettings(
         host.game.settings,
         refreshAppearance,
-        host.foundry?.data?.fields?.ColorField
+        host.foundry?.data?.fields?.ColorField,
+        host.foundry?.data?.fields?.FilePathField,
+        host.foundry?.data?.fields?.NumberField
       );
       host.game.keybindings.register(MODULE_ID, "clearMemory", {
         name: "RAT.Clear.Name",
@@ -89,9 +119,11 @@ export function installModule(host) {
     host.Hooks.once("ready", () => {
       if (disposed) return;
       if (host.game.release.generation !== 14) {
+        host.Hooks.off("getSceneControlButtons", controlsHook);
         host.ui.notifications.warn(localize(host, "RAT.Unsupported"));
         return;
       }
+      refreshLanguage();
       tracker.updatePolicy();
       const module = host.game.modules.get(MODULE_ID);
       if (module)
@@ -115,17 +147,26 @@ export function installModule(host) {
             }
           })
         ]);
-      on("canvasReady", resetContext);
+      on("canvasReady", () => {
+        resetContext();
+        settingsPreview.refreshSceneLink();
+      });
       on("canvasTearDown", () => {
         controlPanel.close();
         tracker.suspend();
+        settingsPreview.refreshSceneLink();
       });
-      on("refreshToken", token => tracker.schedule(token));
+      on("refreshToken", (token, flags) => tracker.refreshed(token, flags));
       on("drawToken", token => tracker.schedule(token));
       on("updateToken", (document, changes) => {
         if (document.parent?.id !== host.canvas?.scene?.id) return;
         if (changes.hidden === true) {
-          store.forget(document.id);
+          if (
+            sceneRetainsMemory(host.canvas.scene) ||
+            host.game.settings.get(MODULE_ID, "rememberHidden")
+          )
+            store.loseSight(document.id);
+          else store.forget(document.id);
           tracker.renderer.forgetVisibility(document.id);
           if (tracker.context) tracker.renderer.sync(store.records());
         }
@@ -149,6 +190,15 @@ export function installModule(host) {
       on("renderTokenConfig", (app, element) =>
         addTokenOverride(host, app, element)
       );
+      on("renderSceneConfig", (app, element) =>
+        addSceneMemoryOptions(host, app, element)
+      );
+      on("updateScene", document => {
+        if (document.id !== host.canvas.scene?.id) return;
+        settingsPreview.refreshSceneLink();
+        tracker.updatePolicy();
+        tracker.schedule();
+      });
       on("renderSettingsConfig", (app, element) =>
         settingsPreview.mount(app, element)
       );
@@ -177,6 +227,7 @@ export function installModule(host) {
       for (const [event, id] of hooks) host.Hooks.off(event, id);
       hooks.length = 0;
       controlPanel.dispose();
+      disposeLocalization(host);
       settingsPreview.dispose();
       tracker.suspend();
       memory.dispose();

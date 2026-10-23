@@ -125,6 +125,7 @@ const token = {
 token.document.object = token;
 const settings = new Map();
 const observer = {
+  controlled: true,
   document: {
     level: "floor",
     hidden: false,
@@ -137,6 +138,7 @@ const pingCalls = [];
 const host = {
   PIXI,
   document,
+  foundry: { canvas: { loadTexture: src => PIXI.Assets.load(src) } },
   fetch: window.fetch.bind(window),
   setInterval: window.setInterval.bind(window),
   clearInterval: window.clearInterval.bind(window),
@@ -172,7 +174,12 @@ const host = {
     }
   },
   game: {
-    user: { id: "player", role: 1, isGM: false, hasPermission: () => true },
+    user: {
+      id: "player",
+      role: 1,
+      isGM: new URL(location.href).searchParams.has("gm"),
+      hasPermission: () => true
+    },
     combat: null,
     settings: {
       register: (_ns, key, data) =>
@@ -243,6 +250,42 @@ window.__ratFixture = {
     form.style.cssText =
       "position:fixed;bottom:0;left:0;background:#222;padding:8px";
     // Native-like light DOM: the picker is named, its inner controls are not.
+    const markerStyle = document.createElement("select");
+    markerStyle.name = "probably-just-a-rat.markerStyle";
+    for (const [value, label] of Object.entries(
+      settings.get("markerStyle").choices
+    )) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = strings[label];
+      markerStyle.append(option);
+    }
+    markerStyle.value = host.game.settings.get(
+      "probably-just-a-rat",
+      "markerStyle"
+    );
+    if (host.game.user.isGM) {
+      form.append(markerStyle);
+      const group = document.createElement("div");
+      group.className = "form-group";
+      const picker = document.createElement("file-picker");
+      picker.setAttribute("name", "probably-just-a-rat.customMarkerImage");
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = host.game.settings.get(
+        "probably-just-a-rat",
+        "customMarkerImage"
+      );
+      Object.defineProperty(picker, "value", {
+        get: () => input.value,
+        set: value => {
+          input.value = value;
+        }
+      });
+      picker.append(input);
+      group.append(picker);
+      form.append(group);
+    }
     for (const [key, min, max] of [
       ["opacity", 30, 80],
       ["grayscale", 0, 100]
@@ -286,13 +329,26 @@ window.__ratFixture = {
     outline.name = "probably-just-a-rat.outline";
     outline.checked = host.game.settings.get("probably-just-a-rat", "outline");
     form.append(outline);
+    const colorGroup = document.createElement("div");
+    colorGroup.className = "form-group";
+    const outlineColor = document.createElement("input");
+    outlineColor.type = "color";
+    outlineColor.name = "probably-just-a-rat.outlineColor";
+    outlineColor.value = host.game.settings.get(
+      "probably-just-a-rat",
+      "outlineColor"
+    );
+    colorGroup.append(outlineColor);
+    form.append(colorGroup);
     const save = document.createElement("button");
     save.textContent = "Save";
     save.type = "submit";
     form.append(save);
     form.addEventListener("submit", async event => {
       event.preventDefault();
-      for (const key of ["opacity", "grayscale", "outline"])
+      const keys = ["opacity", "grayscale", "outline", "outlineColor"];
+      if (host.game.user.isGM) keys.unshift("markerStyle", "customMarkerImage");
+      for (const key of keys)
         await host.game.settings.set(
           "probably-just-a-rat",
           key,

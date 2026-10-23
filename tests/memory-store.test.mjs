@@ -34,6 +34,49 @@ function fixture(policy = {}) {
   };
 }
 
+test("footprint headings follow visible movement in every direction, independently of artwork rotation", () => {
+  for (const [dx, dy, expected] of [
+    [0, -20, 0],
+    [20, -20, 45],
+    [20, 0, 90],
+    [20, 20, 135],
+    [0, 20, 180],
+    [-20, 20, 225],
+    [-20, 0, 270],
+    [-20, -20, 315]
+  ]) {
+    const { store } = fixture();
+    store.observe("enemy", visual);
+    assert.equal(store.get("enemy").snapshot.movementAngle, 0);
+    const moved = { ...visual, x: visual.x + dx, y: visual.y + dy };
+    store.observe("enemy", moved);
+    assert.equal(store.get("enemy").snapshot.movementAngle, expected);
+    store.observe("enemy", { ...moved, rotation: 123, width: 200 });
+    assert.equal(store.get("enemy").snapshot.movementAngle, expected);
+    store.observe("enemy", { ...moved, x: moved.x + 0.001 });
+    assert.equal(store.get("enemy").snapshot.movementAngle, expected);
+    const frozen = store.get("enemy").snapshot;
+    store.loseSight("enemy");
+    store.loseSight("enemy");
+    assert.equal(store.get("enemy").snapshot, frozen);
+  }
+});
+
+test("rediscovery and context changes do not infer a movement direction across unseen positions", () => {
+  const { store } = fixture();
+  store.observe("enemy", visual);
+  store.observe("enemy", { ...visual, x: 100 });
+  assert.equal(store.get("enemy").snapshot.movementAngle, 90);
+  store.loseSight("enemy");
+  store.observe("enemy", { ...visual, x: 500, y: 500 });
+  assert.equal(store.get("enemy").snapshot.movementAngle, 0);
+  store.observe("enemy", { ...visual, x: 480, y: 500 });
+  assert.equal(store.get("enemy").snapshot.movementAngle, 270);
+  store.setContext({ ...context, sceneId: "next-scene" });
+  store.observe("enemy", visual);
+  assert.equal(store.get("enemy").snapshot.movementAngle, 0);
+});
+
 test("elapsed round age begins at loss, survives persistence and never follows a round rewind backwards", () => {
   const { store } = fixture({ combatRounds: 0 });
   store.setCombat({ id: "fight", round: 1, turn: 0 });

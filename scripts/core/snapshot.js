@@ -4,9 +4,10 @@
  * @param {import("../../types/memory.js").SnapshotInput} input
  * @param {number} observedAt
  * @param {import("../../types/memory.js").CombatStamp | null} combat
+ * @param {number} [movementAngle] Clockwise degrees from up; independent of token artwork rotation.
  * @returns {Readonly<import("../../types/memory.js").Snapshot>}
  */
-export function freezeSnapshot(input, observedAt, combat) {
+export function freezeSnapshot(input, observedAt, combat, movementAngle = 0) {
   const {
     x,
     y,
@@ -37,7 +38,8 @@ export function freezeSnapshot(input, observedAt, combat) {
       imageWidth,
       imageHeight,
       anchorX,
-      anchorY
+      anchorY,
+      movementAngle
     ].every(Number.isFinite) ||
     width <= 0 ||
     height <= 0 ||
@@ -63,6 +65,7 @@ export function freezeSnapshot(input, observedAt, combat) {
     imageHeight,
     anchorX,
     anchorY,
+    movementAngle: ((movementAngle % 360) + 360) % 360,
     observedAt,
     combat: combat ? Object.freeze({ ...combat }) : null
   });

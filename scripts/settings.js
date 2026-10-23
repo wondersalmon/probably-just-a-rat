@@ -2,11 +2,57 @@ import { MODULE_ID, MEMORY_DEFAULTS } from "./constants.js";
 import { DEFAULT_OUTLINE_COLOR } from "./appearance.js";
 
 /** @param {import("../types/foundry.js").SettingsService} settings @param {(key: string) => void} onAppearance
- * @param {any} [ColorField]
+ * @param {any} [ColorField] @param {any} [FilePathField] @param {any} [NumberField]
  */
-export function registerSettings(settings, onAppearance, ColorField) {
+export function registerSettings(
+  settings,
+  onAppearance,
+  ColorField,
+  FilePathField,
+  NumberField
+) {
   /** @type {Array<{key: string} & Pick<Parameters<import("../types/foundry.js").SettingsService["register"]>[2], "type" | "default" | "choices" | "range">>} */
   const definitions = [
+    {
+      key: "language",
+      type: String,
+      default: "foundry",
+      choices: {
+        foundry: "RAT.Language.Foundry",
+        en: "RAT.Language.English",
+        ru: "RAT.Language.Russian"
+      }
+    },
+    {
+      key: "markerStyle",
+      type: String,
+      default: "ghost",
+      choices: {
+        ghost: "RAT.MarkerStyle.Ghost",
+        footprints: "RAT.MarkerStyle.Footprints",
+        presence: "RAT.MarkerStyle.Presence",
+        custom: "RAT.MarkerStyle.Custom"
+      }
+    },
+    {
+      key: "customMarkerImage",
+      type: FilePathField
+        ? new FilePathField({
+            required: true,
+            nullable: false,
+            blank: true,
+            categories: ["IMAGE"],
+            initial: ""
+          })
+        : String,
+      default: ""
+    },
+    {
+      // Keep the saved key while sharing movement rotation across all marker styles.
+      key: "customMarkerRotate",
+      type: Boolean,
+      default: false
+    },
     {
       key: "opacity",
       type: Number,
@@ -36,11 +82,21 @@ export function registerSettings(settings, onAppearance, ColorField) {
       default: DEFAULT_OUTLINE_COLOR
     },
     {
-      key: "labels",
+      key: "captionStyle",
       type: String,
       default: "standard",
       choices: {
         off: "RAT.Caption.Off",
+        standard: "RAT.Caption.Standard",
+        contrast: "RAT.Caption.Contrast"
+      }
+    },
+    {
+      key: "labels",
+      type: String,
+      default: "world",
+      choices: {
+        world: "RAT.Caption.World",
         standard: "RAT.Caption.Standard",
         contrast: "RAT.Caption.Contrast"
       }
@@ -62,7 +118,15 @@ export function registerSettings(settings, onAppearance, ColorField) {
       ...config,
       name: `RAT.Settings.${key}.Name`,
       hint: `RAT.Settings.${key}.Hint`,
-      scope: key === "sharePings" ? "world" : "client",
+      scope: [
+        "sharePings",
+        "markerStyle",
+        "customMarkerImage",
+        "customMarkerRotate",
+        "captionStyle"
+      ].includes(key)
+        ? "world"
+        : "client",
       config: true,
       onChange: key === "sharePings" ? () => {} : () => onAppearance(key)
     });
@@ -85,6 +149,15 @@ export function registerSettings(settings, onAppearance, ColorField) {
     default: true,
     onChange: () => onAppearance("showRounds")
   });
+  settings.register(MODULE_ID, "rememberHidden", {
+    name: "RAT.Settings.rememberHidden.Name",
+    hint: "RAT.Settings.rememberHidden.Hint",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+    onChange: () => onAppearance("rememberHidden")
+  });
   settings.register(MODULE_ID, "combatOnly", {
     name: "RAT.Settings.combatOnly.Name",
     hint: "RAT.Settings.combatOnly.Hint",
@@ -103,29 +176,68 @@ export function registerSettings(settings, onAppearance, ColorField) {
       hint: `RAT.Settings.${key}.Hint`,
       scope: "world",
       config: true,
-      type: Number,
+      type: NumberField
+        ? new NumberField({
+            required: true,
+            nullable: false,
+            initial: value,
+            // Integer cleaning can round fractions before validation. Validate
+            // explicitly so that a requested fraction is rejected unchanged.
+            integer: false,
+            validate: /** @param {unknown} candidate */ candidate =>
+              isMemoryDurationValid(String(key), candidate),
+            validationError: `RAT.Settings.${key}.Validation`
+          })
+        : Number,
       default: value,
       onChange: () => onAppearance(String(key))
     });
 }
 
+/** Scene-specific exploration rule. No token data is read.
+ * @param {any} scene
+ */
+export function sceneRetainsMemory(scene) {
+  return sceneMemoryMode(scene) === "long";
+}
+
+/** Explicit modes override the legacy checkbox, which remains readable.
+ * @param {any} scene @returns {"world" | "long" | "disabled"}
+ */
+export function sceneMemoryMode(scene) {
+  const mode = scene?.getFlag?.(MODULE_ID, "memoryMode");
+  if (["world", "long", "disabled"].includes(mode)) return mode;
+  return scene?.getFlag?.(MODULE_ID, "overlandMemory") === true
+    ? "long"
+    : "world";
+}
+
+/** A shared predicate for native field and form validation; never coerces data.
+ * @param {string} key @param {unknown} value
+ */
+export function isMemoryDurationValid(key, value) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
+    return false;
+  return key === "memoryRounds"
+    ? Number.isInteger(value)
+    : key === "memoryMinutes" && Number.isFinite(value * 60);
+}
+
 /** Read positive durations; malformed values fall back to defaults.
  * @param {import("../types/foundry.js").SettingsService} settings
+ * @param {any} [scene]
  */
-export function memoryPolicy(settings) {
+export function memoryPolicy(settings, scene) {
   const rounds = settings.get(MODULE_ID, "memoryRounds");
   const minutes = settings.get(MODULE_ID, "memoryMinutes");
   return {
-    combatRounds:
-      typeof rounds === "number" && Number.isInteger(rounds) && rounds > 0
-        ? rounds
-        : MEMORY_DEFAULTS.combatRounds,
-    seconds:
-      typeof minutes === "number" &&
-      Number.isFinite(minutes * 60) &&
-      minutes > 0
-        ? minutes * 60
-        : MEMORY_DEFAULTS.seconds
+    retainUntilRediscovered: sceneRetainsMemory(scene),
+    combatRounds: isMemoryDurationValid("memoryRounds", rounds)
+      ? Number(rounds)
+      : MEMORY_DEFAULTS.combatRounds,
+    seconds: isMemoryDurationValid("memoryMinutes", minutes)
+      ? Number(minutes) * 60
+      : MEMORY_DEFAULTS.seconds
   };
 }
 
@@ -146,8 +258,10 @@ export async function migrateOpacity(settings) {
  */
 export async function migrateCaptions(settings) {
   const value = settings.get(MODULE_ID, "labels");
-  if (value === true || value === "true")
-    await settings.set(MODULE_ID, "labels", "standard");
-  else if (value === false || value === "false")
-    await settings.set(MODULE_ID, "labels", "off");
+  if (
+    [true, "true", false, "false", "off"].includes(
+      /** @type {boolean | string} */ (value)
+    )
+  )
+    await settings.set(MODULE_ID, "labels", "world");
 }

@@ -28,6 +28,8 @@ export interface CombatStamp {
   turn: number | null;
 }
 export interface Snapshot extends SnapshotInput {
+  /** Clockwise degrees from up, derived only from consecutive visual observations. */
+  movementAngle: number;
   observedAt: number;
   combat: Readonly<CombatStamp> | null;
 }
@@ -44,6 +46,7 @@ export interface MemoryPolicy {
   combatRounds: number;
   seconds: number;
   clearOnCombatEnd: boolean;
+  retainUntilRediscovered: boolean;
 }
 export interface MemoryCheckpoint {
   contextKey: string;

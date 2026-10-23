@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { releaseFiles } from "./files.mjs";
 import { releaseNotes } from "./release-notes.mjs";
+import { validateChangelogs } from "./changelog.mjs";
 
 export async function validate(root) {
   const json = async file =>
@@ -15,10 +16,19 @@ export async function validate(root) {
   assert.equal(manifest.version, pkg.version);
   assert.equal(lock.version, pkg.version);
   assert.equal(lock.packages[""].version, pkg.version);
-  for (const file of ["CHANGELOG.md", "CHANGELOG.ru.md"])
-    releaseNotes(await readFile(path.join(root, file), "utf8"), pkg.version);
+  const changelogs = await Promise.all(
+    ["CHANGELOG.md", "CHANGELOG.ru.md"].map(file =>
+      readFile(path.join(root, file), "utf8")
+    )
+  );
+  validateChangelogs(changelogs[0], changelogs[1]);
+  for (const markdown of changelogs) releaseNotes(markdown, pkg.version);
   assert.match(manifest.version, /^\d+\.\d+\.\d+(?:-[\w.-]+)?$/);
-  assert.deepEqual(manifest.compatibility, { minimum: "14", maximum: "14" });
+  assert.deepEqual(manifest.compatibility, {
+    minimum: "14",
+    verified: "14",
+    maximum: "14"
+  });
   assert.equal(manifest.relationships?.systems, undefined);
   assert.equal(
     manifest.manifest,

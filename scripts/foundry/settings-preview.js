@@ -1,16 +1,24 @@
 import { MODULE_ID } from "../constants.js";
 import { normalizeOutlineColor } from "../appearance.js";
+import {
+  organizeSettings,
+  translateSettings,
+  updateCaptionControls,
+  updateSceneMemoryLink,
+  updateSettingsSample,
+  validateMemoryInputs
+} from "./settings-layout.js";
 
 /** Preview native settings locally; only Foundry's form submission persists values. */
 export class SettingsPreview {
   /** @param {import("../../types/foundry.js").FoundryHost} host
-   * @param {(values: Partial<{opacity: number, grayscale: number, outline: boolean, outlineColor: string}>) => void} apply
+   * @param {(values: Partial<{markerStyle: string, customMarkerImage: string, opacity: number, grayscale: number, outline: boolean, outlineColor: string, labels: string, captionStyle: string, customMarkerRotate: boolean, showNames: boolean, showRounds: boolean}>) => void} apply
    */
   constructor(host, apply) {
     this.host = host;
     this.apply = apply;
   }
-  /** @type {Map<any, {root: HTMLElement, listener: (event: Event) => void, values: Partial<{opacity: number, grayscale: number, outline: boolean, outlineColor: string}>}>} */
+  /** @type {Map<any, {root: HTMLElement, listener: (event: Event) => void, values: Partial<{markerStyle: string, customMarkerImage: string, opacity: number, grayscale: number, outline: boolean, outlineColor: string, labels: string, captionStyle: string, customMarkerRotate: boolean, showNames: boolean, showRounds: boolean}>}>} */
   bindings = new Map();
   /** @type {any} */
   ticker = null;
@@ -39,6 +47,25 @@ export class SettingsPreview {
     const enabled =
       toggle?.checked ??
       Boolean(this.host.game.settings.get(MODULE_ID, "outline"));
+    group.hidden = false;
+    group.style.display = "";
+    group.classList?.toggle("rat-outline-inactive", !enabled);
+  }
+  /** @param {HTMLElement} root */
+  updateImageVisibility(root) {
+    const field = root.querySelector(
+      '[name="' + MODULE_ID + '.customMarkerImage"]'
+    );
+    const group = /** @type {HTMLElement | null | undefined} */ (
+      field?.closest?.(".form-group")
+    );
+    const style = /** @type {HTMLSelectElement | null} */ (
+      root.querySelector('select[name="' + MODULE_ID + '.markerStyle"]')
+    );
+    const enabled =
+      (style?.value ??
+        this.host.game.settings.get(MODULE_ID, "markerStyle")) === "custom";
+    if (!group) return;
     group.hidden = !enabled;
     group.style.display = enabled ? "" : "none";
   }
@@ -57,27 +84,98 @@ export class SettingsPreview {
         else input.value = String(value);
       }
     }
+    translateSettings(this.host, root);
+    organizeSettings(
+      this.host,
+      root,
+      previous?.root.dataset?.ratSettingsSection
+    );
+    validateMemoryInputs(this.host, root);
+    updateCaptionControls(this.host, root, values);
     this.updateColorVisibility(root);
+    this.updateImageVisibility(root);
+    updateSettingsSample(this.host, root, values);
     /** @param {Event} event */
     const listener = event => {
+      validateMemoryInputs(this.host, root);
       const target = /** @type {HTMLInputElement} */ (event.target);
       if (!target?.closest) return;
       const field = target.closest(
-        "range-picker[name], color-picker[name], input[name]"
+        "range-picker[name], color-picker[name], file-picker[name], input[name], select[name]"
       );
       const name = field?.getAttribute("name");
       const key =
-        name === `${MODULE_ID}.opacity`
-          ? "opacity"
-          : name === `${MODULE_ID}.grayscale`
-            ? "grayscale"
-            : name === `${MODULE_ID}.outline`
-              ? "outline"
-              : name === `${MODULE_ID}.outlineColor`
-                ? "outlineColor"
-                : null;
+        name === `${MODULE_ID}.markerStyle`
+          ? "markerStyle"
+          : name === `${MODULE_ID}.customMarkerImage`
+            ? "customMarkerImage"
+            : name === `${MODULE_ID}.opacity`
+              ? "opacity"
+              : name === `${MODULE_ID}.grayscale`
+                ? "grayscale"
+                : name === `${MODULE_ID}.outline`
+                  ? "outline"
+                  : name === `${MODULE_ID}.outlineColor`
+                    ? "outlineColor"
+                    : name === `${MODULE_ID}.labels`
+                      ? "labels"
+                      : name === `${MODULE_ID}.customMarkerRotate`
+                        ? "customMarkerRotate"
+                        : name === `${MODULE_ID}.showNames`
+                          ? "showNames"
+                          : name === `${MODULE_ID}.showRounds`
+                            ? "showRounds"
+                            : null;
+      if (name === `${MODULE_ID}.captionStyle`) {
+        if (
+          !this.host.game.user.isGM ||
+          !["off", "standard", "contrast"].includes(target.value)
+        )
+          return;
+        values.captionStyle = target.value;
+        updateCaptionControls(this.host, root, values);
+        updateSettingsSample(this.host, root, values);
+        const binding = this.bindings.get(app);
+        if (binding) {
+          this.bindings.delete(app);
+          this.bindings.set(app, binding);
+        }
+        this.schedule();
+        return;
+      }
       if (!key) return;
-      if (key === "outline") {
+      if (["showNames", "showRounds", "customMarkerRotate"].includes(key)) {
+        if (!this.host.game.user.isGM) return;
+        values[
+          /** @type {"customMarkerRotate" | "showNames" | "showRounds"} */ (key)
+        ] = Boolean(target.checked);
+      } else if (key === "labels") {
+        if (
+          this.host.game.user.isGM ||
+          this.host.game.settings.get(MODULE_ID, "captionStyle") === "off" ||
+          !["standard", "contrast"].includes(target.value)
+        )
+          return;
+        values.labels = target.value;
+      } else if (key === "markerStyle") {
+        if (!this.host.game.user.isGM) return;
+        if (
+          !["ghost", "footprints", "presence", "custom"].includes(target.value)
+        )
+          return;
+        if (values.markerStyle === target.value) return;
+        values.markerStyle = target.value;
+        this.updateImageVisibility(root);
+      } else if (key === "customMarkerImage") {
+        if (!this.host.game.user.isGM) return;
+        const path = String(
+          target.tagName === "INPUT"
+            ? target.value
+            : /** @type {HTMLInputElement} */ (field).value
+        ).trim();
+        if (values.customMarkerImage === path) return;
+        values.customMarkerImage = path;
+      } else if (key === "outline") {
         this.updateColorVisibility(root);
         const checked = Boolean(target.checked);
         if (values.outline === checked) return;
@@ -103,8 +201,9 @@ export class SettingsPreview {
           Math.max(key === "opacity" ? 30 : 0, Number(raw))
         );
         if (values[key] === value) return;
-        values[key] = value;
+        values[/** @type {"opacity" | "grayscale"} */ (key)] = value;
       }
+      updateSettingsSample(this.host, root, values);
       // The most recently edited settings window owns the local preview.
       const binding = this.bindings.get(app);
       if (binding) {
@@ -116,6 +215,24 @@ export class SettingsPreview {
     root.addEventListener("input", listener);
     root.addEventListener("change", listener);
     this.bindings.set(app, { root, listener, values });
+  }
+  refreshCaptionPolicy() {
+    for (const { root, values } of this.bindings.values()) {
+      updateCaptionControls(this.host, root, values);
+      updateSettingsSample(this.host, root, values);
+    }
+  }
+  refreshSceneLink() {
+    for (const { root } of this.bindings.values())
+      updateSceneMemoryLink(this.host, root);
+  }
+  refreshLanguage() {
+    for (const { root, values } of this.bindings.values()) {
+      translateSettings(this.host, root);
+      updateCaptionControls(this.host, root, values);
+      validateMemoryInputs(this.host, root);
+      updateSettingsSample(this.host, root, values);
+    }
   }
   /** @param {{root: HTMLElement, listener: (event: Event) => void}} binding */
   detach(binding) {

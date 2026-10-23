@@ -20,7 +20,7 @@ const dictionaries = Object.fromEntries(
 );
 
 for (const language of ["en", "ru"])
-  test(`native Foundry language owns all translations without a language setting or extra fetch (${language})`, async () => {
+  test(`default module language follows Foundry without an extra dictionary fetch (${language})`, async () => {
     const f = runtimeHost();
     const strings = dictionaries[language];
     const native = key => strings[key] ?? key;
@@ -34,11 +34,6 @@ for (const language of ["en", "ru"])
     };
     const get = f.host.game.settings.get;
     f.host.game.settings.get = (namespace, key) => {
-      assert.notEqual(
-        key,
-        "language",
-        "retired language override must be ignored"
-      );
       assert.notEqual(
         key,
         "showMarkers",
@@ -74,7 +69,7 @@ for (const language of ["en", "ru"])
     assert.equal(snapshotName(f.host, "RAT.Unknown"), "RAT.Unknown");
     assert.equal(f.host.game.i18n.localize, native);
     assert.equal(f.menus.size, 0);
-    assert.equal(f.settings.size, 11);
+    assert.equal(f.settings.size, 17);
     assert.equal(
       f.host.game.modules.get(ID).api.getDiagnostics().failed,
       false

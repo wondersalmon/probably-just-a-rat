@@ -1,5 +1,8 @@
 import { MODULE_ID } from "../constants.js";
-import { resolveAppearance } from "../appearance.js";
+import { resolveAppearance, resolveCaptionStyle } from "../appearance.js";
+import { createBootPrints } from "./boot-prints.js";
+import { createPresenceTrace } from "./presence-trace.js";
+import { CustomMarkerImage } from "./custom-marker-image.js";
 import { createSilhouette, createOutlineFilter } from "./silhouette-outline.js";
 import { isSavedImage } from "../local-memory-cache.js";
 import { localize, format, snapshotName } from "../localization.js";
@@ -13,10 +16,15 @@ import {
 export class MarkerRenderer {
   /** @param {import("../../types/foundry.js").FoundryHost} host
    * @param {import("../core/memory-store.js").MemoryStore | null} [store]
+   * @param {() => void} [onArtworkChange]
    */
-  constructor(host, store = null) {
+  constructor(host, store = null, onArtworkChange = () => {}) {
     this.host = host;
     this.store = store;
+    this.customImage = new CustomMarkerImage(host, () => {
+      this.rebuild();
+      onArtworkChange();
+    });
   }
   /** @type {any} */
   root = null;
@@ -31,7 +39,7 @@ export class MarkerRenderer {
   maskDirty = true;
   /** @type {{x: number, y: number, width: number, height: number} | null} */
   maskRect = null;
-  /** @type {Partial<{opacity: number, grayscale: number, outline: boolean, outlineColor: string}>} */
+  /** @type {Partial<{markerStyle: string, customMarkerImage: string, customMarkerRotate: boolean, labels: string | boolean, captionStyle: string, showNames: boolean, showRounds: boolean, opacity: number, grayscale: number, outline: boolean, outlineColor: string}>} */
   preview = {};
 
   appearance() {
@@ -40,14 +48,39 @@ export class MarkerRenderer {
       grayscale: this.host.game.settings.get(MODULE_ID, "grayscale"),
       outline: this.host.game.settings.get(MODULE_ID, "outline"),
       outlineColor: this.host.game.settings.get(MODULE_ID, "outlineColor"),
-      labels: this.host.game.settings.get(MODULE_ID, "labels"),
-      ...this.preview
+      ...this.preview,
+      labels: resolveCaptionStyle(
+        (this.host.game.user.isGM ? this.preview.captionStyle : undefined) ??
+          this.host.game.settings.get(MODULE_ID, "captionStyle"),
+        this.preview.labels ?? this.host.game.settings.get(MODULE_ID, "labels"),
+        this.host.game.user.isGM
+      ),
+      markerStyle:
+        (this.host.game.user.isGM ? this.preview.markerStyle : undefined) ??
+        this.host.game.settings.get(MODULE_ID, "markerStyle"),
+      customMarkerImage:
+        (this.host.game.user.isGM
+          ? this.preview.customMarkerImage
+          : undefined) ??
+        this.host.game.settings.get(MODULE_ID, "customMarkerImage"),
+      customMarkerRotate:
+        (this.host.game.user.isGM
+          ? this.preview.customMarkerRotate
+          : undefined) ??
+        this.host.game.settings.get(MODULE_ID, "customMarkerRotate")
     });
   }
 
-  /** @param {Partial<{opacity: number, grayscale: number, outline: boolean, outlineColor: string}>} values */
+  /** @param {Partial<{markerStyle: string, customMarkerImage: string, customMarkerRotate: boolean, labels: string | boolean, captionStyle: string, showNames: boolean, showRounds: boolean, opacity: number, grayscale: number, outline: boolean, outlineColor: string}>} values */
   setPreview(values) {
     if (
+      this.preview.markerStyle === values.markerStyle &&
+      this.preview.customMarkerImage === values.customMarkerImage &&
+      this.preview.customMarkerRotate === values.customMarkerRotate &&
+      this.preview.labels === values.labels &&
+      this.preview.captionStyle === values.captionStyle &&
+      this.preview.showNames === values.showNames &&
+      this.preview.showRounds === values.showRounds &&
       this.preview.opacity === values.opacity &&
       this.preview.grayscale === values.grayscale &&
       this.preview.outline === values.outline &&
@@ -196,14 +229,25 @@ export class MarkerRenderer {
     const centerY = s.height / 2;
     /** @type {any[]} */
     const filters = [];
-    const entry = this.textures.get(record.tokenId);
+    const custom = appearance.markerStyle === "custom";
+    const entry = custom ? this.customImage : this.textures.get(record.tokenId);
     const texture = entry?.texture;
-    if (texture) {
+    const imageSnapshot =
+      custom && texture
+        ? this.customImageSnapshot(texture, s, appearance.customMarkerRotate)
+        : appearance.customMarkerRotate
+          ? { ...s, rotation: s.movementAngle ?? 0 }
+          : s;
+    if (appearance.markerStyle === "footprints") {
+      container.addChild(createBootPrints(this.host, s, appearance));
+    } else if (appearance.markerStyle === "presence" || (custom && !texture)) {
+      container.addChild(createPresenceTrace(this.host, s, appearance));
+    } else if (texture) {
       if (appearance.outline && entry) {
         if (entry.silhouette === undefined)
           entry.silhouette = createSilhouette(this.host, texture);
         if (entry.silhouette) {
-          const outline = this.imageSprite(entry.silhouette, s);
+          const outline = this.imageSprite(entry.silhouette, imageSnapshot);
           outline.name = "rat-ghost-outline";
           outline.alpha = appearance.opacity;
           const filter = createOutlineFilter(
@@ -216,7 +260,7 @@ export class MarkerRenderer {
           container.addChild(outline);
         }
       }
-      const sprite = this.imageSprite(texture, s);
+      const sprite = this.imageSprite(texture, imageSnapshot);
       sprite.name = "rat-ghost-image";
       sprite.alpha = appearance.opacity;
       if (appearance.grayscale > 0) {
@@ -239,8 +283,12 @@ export class MarkerRenderer {
         );
       silhouette
         .beginFill(0xd0d0d0, appearance.opacity)
-        .drawEllipse(centerX, centerY, s.width * 0.3, s.height * 0.4)
+        .drawEllipse(0, 0, s.width * 0.3, s.height * 0.4)
         .endFill();
+      silhouette.position.set(centerX, centerY);
+      silhouette.angle = appearance.customMarkerRotate
+        ? (s.movementAngle ?? 0)
+        : 0;
       container.addChild(silhouette);
     }
     // Freeze color processing once; captions can update without rebuilding the image.
@@ -329,6 +377,26 @@ export class MarkerRenderer {
     return sprite;
   }
 
+  /** Fit without stretching or inheriting the enemy's rotation/mirroring.
+   * Optional orientation uses only frozen, continuously observed movement.
+   * @param {any} texture @param {Readonly<import("../../types/memory.js").Snapshot>} s
+   * @param {boolean} [rotate]
+   */
+  customImageSnapshot(texture, s, rotate = false) {
+    const scale =
+      0.8 * Math.min(s.width / texture.width, s.height / texture.height);
+    return {
+      ...s,
+      imageWidth: texture.width * scale,
+      imageHeight: texture.height * scale,
+      anchorX: 0.5,
+      anchorY: 0.5,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: rotate ? (s.movementAngle ?? 0) : 0
+    };
+  }
+
   /** Encode only our immutable texture copy, never the current hidden token image. @param {string} id */
   savedImage(id) {
     const entry = this.textures.get(id);
@@ -375,7 +443,8 @@ export class MarkerRenderer {
   /** @param {Pick<import("../../types/memory.js").MemoryRecord, "snapshot"> & Partial<Pick<import("../../types/memory.js").MemoryRecord, "combatAgeFrom">>} record */
   label(record) {
     const rounds = this.store?.roundsSinceLoss(record);
-    return this.host.game.settings.get(MODULE_ID, "showRounds") &&
+    return ((this.host.game.user.isGM ? this.preview.showRounds : undefined) ??
+      this.host.game.settings.get(MODULE_ID, "showRounds")) &&
       typeof rounds === "number"
       ? format(this.host, "RAT.RoundsSinceLoss", { rounds })
       : localize(this.host, "RAT.LastPosition");
@@ -383,14 +452,22 @@ export class MarkerRenderer {
 
   /** Name is only the immutable, permission-checked observed name. @param {Pick<import("../../types/memory.js").MemoryRecord, "snapshot"> & Partial<Pick<import("../../types/memory.js").MemoryRecord, "combatAgeFrom">>} record */
   caption(record) {
-    return this.host.game.settings.get(MODULE_ID, "showNames")
-      ? `${snapshotName(this.host, record.snapshot.name)}\n${this.label(record)}`
-      : this.label(record);
+    const position = localize(this.host, "RAT.LastPosition");
+    const label = this.label(record);
+    const description = label === position ? position : `${position}\n${label}`;
+    return ((this.host.game.user.isGM ? this.preview.showNames : undefined) ??
+      this.host.game.settings.get(MODULE_ID, "showNames"))
+      ? `${snapshotName(this.host, record.snapshot.name)}\n${description}`
+      : description;
   }
 
   /** @param {Array<Readonly<import("../../types/memory.js").MemoryRecord>>} records */
   sync(records) {
     this.mount();
+    const appearance = this.appearance();
+    this.customImage.use(
+      appearance.markerStyle === "custom" ? appearance.customMarkerImage : ""
+    );
     const ids = new Set(records.map(record => record.tokenId));
     for (const id of this.textures.keys())
       if (!ids.has(id)) this.releaseTexture(id);
@@ -454,6 +531,7 @@ export class MarkerRenderer {
   }
   clear() {
     for (const id of this.markers.keys()) this.removeMarker(id);
+    this.customImage.clear();
     for (const id of this.textures.keys()) this.releaseTexture(id);
     this.visibleBounds.clear();
     this.root?.destroy({ children: true, texture: false, baseTexture: false });

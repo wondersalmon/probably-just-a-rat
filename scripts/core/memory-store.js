@@ -55,7 +55,8 @@ export class MemoryStore {
         n => Number.isFinite(n) && n >= 0
       ) ||
       !Number.isInteger(next.combatRounds) ||
-      typeof next.clearOnCombatEnd !== "boolean"
+      typeof next.clearOnCombatEnd !== "boolean" ||
+      typeof next.retainUntilRediscovered !== "boolean"
     )
       throw new TypeError("Invalid memory policy.");
     this.#policy = next;
@@ -71,7 +72,23 @@ export class MemoryStore {
     if (!this.#context || input.levelId !== this.#context.levelId) return false;
     if (!tokenId) throw new TypeError("Token ID is required.");
     const observedAt = this.#time();
-    const snapshot = freezeSnapshot(input, observedAt, this.#combat);
+    const previous = this.#records.get(tokenId);
+    let movementAngle = 0;
+    // Never infer a path across a visibility gap, reload or context change.
+    if (previous?.state === "observed") {
+      const dx = input.x - previous.snapshot.x;
+      const dy = input.y - previous.snapshot.y;
+      movementAngle =
+        Math.hypot(dx, dy) > 0.01
+          ? (Math.atan2(dy, dx) * 180) / Math.PI + 90
+          : previous.snapshot.movementAngle;
+    }
+    const snapshot = freezeSnapshot(
+      input,
+      observedAt,
+      this.#combat,
+      movementAngle
+    );
     this.#records.set(
       tokenId,
       Object.freeze({
@@ -113,7 +130,7 @@ export class MemoryStore {
     this.#records.clear();
   }
 
-  /** Explicit Hidden is handled by forget; an unseen deletion retains memory. @param {string} tokenId */
+  /** Hidden policy is handled by the tracker; an unseen deletion retains memory. @param {string} tokenId */
   deleteToken(tokenId) {
     if (this.#records.get(tokenId)?.state === "observed") this.forget(tokenId);
   }
@@ -132,7 +149,7 @@ export class MemoryStore {
     )
       throw new TypeError("Invalid combat stamp.");
     const previous = this.#combat;
-    if (combat?.id !== previous?.id) {
+    if (combat?.id !== previous?.id && !this.#policy.retainUntilRediscovered) {
       if (combat || this.#policy.clearOnCombatEnd) this.clear();
       else {
         this.expire();
@@ -152,6 +169,7 @@ export class MemoryStore {
 
   expire() {
     const now = this.#time();
+    if (this.#policy.retainUntilRediscovered) return;
     for (const [id, record] of this.#records) {
       if (record.state !== "remembered") continue;
       const seenCombat = record.snapshot.combat;
@@ -217,14 +235,16 @@ export class MemoryStore {
     };
   }
 
-  /** Restore only into the exact current context/combat; native observation must reconfirm visible tokens.
+  /** Restore only into the exact current context; ordinary memory also requires the same combat.
+   * Native observation must reconfirm visible tokens. Overland memory may span combats.
    * @param {import("../../types/memory.js").MemoryCheckpoint} saved @param {number} elapsedMs
    */
   restore(saved, elapsedMs) {
     if (
       !this.#context ||
       saved?.contextKey !== this.#context.key ||
-      saved.combat?.id !== this.#combat?.id ||
+      (!this.#policy.retainUntilRediscovered &&
+        saved.combat?.id !== this.#combat?.id) ||
       !Array.isArray(saved.records) ||
       !Number.isFinite(elapsedMs) ||
       elapsedMs < 0 ||
@@ -233,7 +253,11 @@ export class MemoryStore {
     )
       return;
     const now = this.#time();
-    this.#roundHighWater = Math.max(this.#roundHighWater, saved.roundHighWater);
+    if (saved.combat?.id === this.#combat?.id)
+      this.#roundHighWater = Math.max(
+        this.#roundHighWater,
+        saved.roundHighWater
+      );
     for (const entry of saved.records.slice(0, 100)) {
       try {
         const combat = entry.snapshot?.combat;
@@ -244,9 +268,11 @@ export class MemoryStore {
             n => Number.isFinite(n) && n >= 0
           ) ||
           entry.snapshot.levelId !== this.#context.levelId ||
-          combat?.id !== saved.combat?.id ||
+          (!this.#policy.retainUntilRediscovered &&
+            combat?.id !== saved.combat?.id) ||
           (combat &&
-            (combat.id !== this.#combat?.id ||
+            (typeof combat.id !== "string" ||
+              !combat.id ||
               !Number.isInteger(combat.round) ||
               combat.round < 0 ||
               (combat.turn !== null &&
@@ -258,7 +284,8 @@ export class MemoryStore {
         const snapshot = freezeSnapshot(
           { ...entry.snapshot, texture: null },
           now - entry.seenAgeMs - elapsedMs,
-          combat
+          combat,
+          entry.snapshot.movementAngle ?? 0
         );
         this.#records.set(
           entry.tokenId,

@@ -218,7 +218,11 @@ test("Plain grayscale slider preserves geometry and alpha while removing color p
     );
     await page.evaluate(
       grayscale =>
-        __ratFixture.appearance({ grayscale, opacity: 50, labels: "off" }),
+        __ratFixture.appearance({
+          grayscale,
+          opacity: 50,
+          captionStyle: "off"
+        }),
       grayscale
     );
     await page.waitForFunction(before => {
@@ -276,7 +280,8 @@ test("GM round counter updates without rebuilding Plain art and can be hidden", 
   await page.waitForFunction(() => window.__ratFixture?.store.size === 1);
   await page.evaluate(() => {
     const tracker = __ratFixture.tracker;
-    tracker.store.setPolicy({ combatRounds: 0 });
+    // Observation reapplies the registered world policy on each pass.
+    __ratFixture.appearance({ memoryRounds: 10 });
     tracker.host.game.combat = {
       id: "fight",
       started: true,

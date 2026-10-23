@@ -4,7 +4,9 @@ import { resolveAppearance } from "../scripts/appearance.js";
 import {
   registerSettings,
   migrateOpacity,
-  memoryPolicy
+  memoryPolicy,
+  sceneMemoryMode,
+  sceneRetainsMemory
 } from "../scripts/settings.js";
 import { MemoryStore } from "../scripts/core/memory-store.js";
 import { ObservationTracker } from "../scripts/observation-tracker.js";
@@ -12,16 +14,78 @@ import { installModule } from "../scripts/lifecycle.js";
 import { runtimeHost, token } from "./helpers/runtime.mjs";
 import { MODULE_ID } from "../scripts/constants.js";
 
+test("native NumberField validation rejects invalid writes without replacing the saved durations", async () => {
+  const f = runtimeHost();
+  // The boundary models Foundry's validate-before-write contract. It does not
+  // emulate native rendering or claim a live Foundry save was exercised.
+  class NumberField {
+    constructor(options) {
+      this.options = options;
+    }
+  }
+  registerSettings(
+    f.host.game.settings,
+    () => {},
+    undefined,
+    undefined,
+    NumberField
+  );
+  const write = f.host.game.settings.set;
+  f.host.game.settings.set = async (namespace, key, value) => {
+    const field = f.settings.get(key).type;
+    if (!field.options.validate(value))
+      throw new Error(field.options.validationError);
+    return write(namespace, key, value);
+  };
+  for (const key of ["memoryRounds", "memoryMinutes"]) {
+    const field = f.settings.get(key).type;
+    assert.equal(field.options.integer, false);
+    assert.equal(field.options.nullable, false);
+    const saved = f.host.game.settings.get(MODULE_ID, key);
+    for (const invalid of [0, -5, NaN, Infinity, "", null]) {
+      await assert.rejects(f.host.game.settings.set(MODULE_ID, key, invalid), {
+        message: `RAT.Settings.${key}.Validation`
+      });
+      assert.equal(f.host.game.settings.get(MODULE_ID, key), saved);
+    }
+  }
+  await assert.rejects(
+    f.host.game.settings.set(MODULE_ID, "memoryRounds", 1.5)
+  );
+  await assert.rejects(
+    f.host.game.settings.set(MODULE_ID, "memoryMinutes", Number.MAX_VALUE)
+  );
+  await f.host.game.settings.set(MODULE_ID, "memoryRounds", 3);
+  await f.host.game.settings.set(MODULE_ID, "memoryMinutes", 0.25);
+  assert.equal(memoryPolicy(f.host.game.settings).combatRounds, 3);
+  assert.equal(memoryPolicy(f.host.game.settings).seconds, 15);
+});
+
+test("explicit scene modes override legacy overland flags without losing legacy compatibility", () => {
+  const scene = (memoryMode, overlandMemory) => ({
+    getFlag: (_module, key) => ({ memoryMode, overlandMemory })[key]
+  });
+  assert.equal(sceneMemoryMode(undefined), "world");
+  assert.equal(sceneMemoryMode(scene(undefined, true)), "long");
+  assert.equal(sceneMemoryMode(scene("broken", true)), "long");
+  assert.equal(sceneMemoryMode(scene("world", true)), "world");
+  assert.equal(sceneMemoryMode(scene("disabled", true)), "disabled");
+  assert.equal(sceneRetainsMemory(scene("disabled", true)), false);
+  assert.equal(sceneRetainsMemory(scene("long", false)), true);
+});
+
 test("memory durations accept positive rounds and fractional minutes, falling back safely for malformed values", () => {
   const f = runtimeHost();
   registerSettings(f.host.game.settings, () => {});
   assert.deepEqual(memoryPolicy(f.host.game.settings), {
+    retainUntilRediscovered: false,
     combatRounds: 2,
     seconds: 60
   });
   f.settings.get("memoryRounds").value = 5;
   f.settings.get("memoryMinutes").value = 0.5;
   assert.deepEqual(memoryPolicy(f.host.game.settings), {
+    retainUntilRediscovered: false,
     combatRounds: 5,
     seconds: 30
   });
@@ -29,6 +93,7 @@ test("memory durations accept positive rounds and fractional minutes, falling ba
     f.settings.get("memoryRounds").value = invalid;
     f.settings.get("memoryMinutes").value = invalid;
     assert.deepEqual(memoryPolicy(f.host.game.settings), {
+      retainUntilRediscovered: false,
       combatRounds: 2,
       seconds: 60
     });
@@ -36,6 +101,7 @@ test("memory durations accept positive rounds and fractional minutes, falling ba
   f.settings.get("memoryRounds").value = 1.5;
   f.settings.get("memoryMinutes").value = Number.MAX_VALUE;
   assert.deepEqual(memoryPolicy(f.host.game.settings), {
+    retainUntilRediscovered: false,
     combatRounds: 2,
     seconds: 60
   });
@@ -103,7 +169,7 @@ test("grayscale changes rebuild the same frozen image without observing hidden s
   for (const grayscale of [0, 50, 100]) {
     await f.host.game.settings.set(MODULE_ID, "grayscale", grayscale);
     await f.host.game.settings.set(MODULE_ID, "opacity", 50);
-    await f.host.game.settings.set(MODULE_ID, "labels", false);
+    await f.host.game.settings.set(MODULE_ID, "captionStyle", "off");
     f.frame();
     assert.equal(tracker.failed, false);
     assert.equal(store.get("enemy").snapshot, snapshot);

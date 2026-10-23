@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Ticker } from "pixi.js";
+import { Ticker, UPDATE_PRIORITY } from "pixi.js";
 import { MemoryStore } from "../scripts/core/memory-store.js";
 import { ObservationTracker } from "../scripts/observation-tracker.js";
 import { registerSettings } from "../scripts/settings.js";
@@ -36,6 +36,92 @@ function fixture() {
     }
   };
 }
+
+test("overland scene retains only known positions through Hidden, elapsed time and combat changes", async () => {
+  const f = fixture();
+  let overland = true;
+  f.host.canvas.scene.getFlag = (_namespace, key) =>
+    key === "overlandMemory" && overland;
+  await f.host.game.settings.set("probably-just-a-rat", "combatOnly", true);
+  f.update();
+  f.enemy.position.x = 60;
+  f.enemy.mesh.position.x = 110;
+  f.update(f.enemy);
+  const snapshot = f.store.get("enemy").snapshot;
+  f.enemy.document.hidden = true;
+  f.enemy.visual = f.enemy.visible = false;
+  Object.defineProperty(f.enemy, "position", {
+    get() {
+      throw new Error("Hidden position must not be read");
+    }
+  });
+  f.update(f.enemy);
+  const unknown = token(f.host, "unknown");
+  unknown.document.hidden = true;
+  f.update(unknown);
+  assert.equal(f.store.get("unknown"), undefined);
+  assert.equal(f.store.get("enemy").snapshot, snapshot);
+  assert.equal(f.timers.size, 0);
+  f.advance(10 * 24 * 60 * 60 * 1000);
+  for (const combat of [
+    { id: "fight-a", started: true, scene: null, round: 1, turn: 0 },
+    { id: "fight-a", started: true, scene: null, round: 50, turn: 0 },
+    null,
+    { id: "fight-b", started: true, scene: null, round: 1, turn: 0 },
+    null
+  ]) {
+    f.host.game.combat = combat;
+    f.update();
+    assert.equal(f.store.get("enemy").snapshot, snapshot);
+    assert.equal(f.tracker.renderer.markers.size, 1);
+  }
+  overland = false;
+  f.update();
+  assert.equal(f.store.size, 0);
+  assert.equal(f.tracker.renderer.markers.size, 0);
+  assert.equal(f.tracker.failed, false);
+  f.tracker.suspend();
+});
+
+test("overland markers disappear on rediscovery, manual forgetting and scene changes", () => {
+  const f = fixture();
+  f.host.canvas.scene.getFlag = () => true;
+  f.update();
+  f.enemy.visual = f.enemy.visible = false;
+  f.update(f.enemy);
+  assert.equal(f.tracker.renderer.markers.size, 1);
+  f.enemy.visual = f.enemy.visible = true;
+  f.update(f.enemy);
+  assert.equal(f.tracker.renderer.markers.size, 0);
+  f.enemy.visual = f.enemy.visible = false;
+  f.update(f.enemy);
+  f.tracker.forget("enemy");
+  assert.equal(f.store.size, 0);
+  f.enemy.visual = f.enemy.visible = true;
+  f.update(f.enemy);
+  f.enemy.visual = f.enemy.visible = false;
+  f.update(f.enemy);
+  f.host.canvas.scene = { id: "other-scene", getFlag: () => true };
+  f.update();
+  assert.equal(f.store.size, 0);
+  assert.equal(f.tracker.renderer.markers.size, 0);
+  f.tracker.suspend();
+});
+
+test("a timer rendering failure stops observation and releases the repeated callback", () => {
+  const f = fixture();
+  f.update();
+  f.enemy.visual = f.enemy.visible = false;
+  f.update(f.enemy);
+  f.tracker.renderer.sync = () => {
+    throw new Error("Renderer unavailable");
+  };
+  assert.doesNotThrow(() => f.advance(1000));
+  assert.equal(f.tracker.failed, true);
+  assert.equal(f.timers.size, 0);
+  assert.equal(f.tracker.renderer.markers.size, 0);
+  assert.equal(f.warnings.length, 1);
+});
 
 test("combat-only mode rejects absent, unstarted and other-scene combats but accepts scene and global combats", async () => {
   const f = fixture();
@@ -296,6 +382,24 @@ test("one continuous animation freezes its last visible frame without intermedia
   f.tracker.suspend();
 });
 
+test("coalesced native refreshes retain sight gaps instead of deriving a heading from unseen movement", () => {
+  const f = fixture();
+  f.update();
+  f.enemy.position.x = 100;
+  f.enemy.mesh.position.x = 150;
+  f.tracker.refreshed(f.enemy, { refreshPosition: true });
+  assert.equal(f.store.get("enemy").snapshot.movementAngle, 90);
+  f.enemy.visual = f.enemy.visible = false;
+  f.tracker.refreshed(f.enemy, { refreshPosition: true });
+  assert.equal(f.store.get("enemy").state, "remembered");
+  f.enemy.position.x = 700;
+  f.enemy.mesh.position.x = 750;
+  f.enemy.visual = f.enemy.visible = true;
+  f.tracker.refreshed(f.enemy, { refreshPosition: true });
+  assert.equal(f.store.get("enemy").snapshot.movementAngle, 0);
+  f.tracker.suspend();
+});
+
 test("observer animation checks stationary targets and cancels frame sampling on teardown", () => {
   const f = fixture();
   f.update();
@@ -322,14 +426,15 @@ test("real PIXI ticker samples after native Token animation and render flags, th
   const positions = [20, 80, 160, 240, 400, 700];
   let frame = 0;
   f.enemy.animationContexts.set("movement", {});
-  // Token.animate explicitly uses OBJECTS+1=49, not CanvasAnimation's default LOW+1.
+  // Match Foundry's priorities rather than hard-coding values for PIXI's HIGH.
+  const objectsPriority = UPDATE_PRIORITY.HIGH - 2;
   ticker.add(
     () => {
       f.enemy.document.x = positions[frame];
       if (++frame === positions.length) f.enemy.animationContexts.clear();
     },
     undefined,
-    49
+    objectsPriority + 1
   );
   ticker.add(
     () => {
@@ -339,9 +444,9 @@ test("real PIXI ticker samples after native Token animation and render flags, th
       if (frame === 1) f.tracker.schedule(f.enemy);
     },
     undefined,
-    48
+    objectsPriority
   );
-  ticker.add(() => {}, undefined, 2); // Perception.
+  ticker.add(() => {}, undefined, UPDATE_PRIORITY.NORMAL + 2); // Perception.
   try {
     for (let i = 0; i < positions.length; i++) ticker.update(100 + i * 20);
     assert.equal(f.store.get("enemy").snapshot.x, 240);
@@ -420,6 +525,86 @@ test("level and source changes clear old markers; previews do not contribute vis
   f.host.canvas.level.id = "upstairs";
   f.update();
   assert.equal(f.store.size, 0);
+  assert.equal(f.tracker.renderer.markers.size, 0);
+  f.tracker.suspend();
+});
+
+test("GM can keep an observed snapshot on Hidden without reading hidden geometry or extending its lifetime", async () => {
+  const f = fixture();
+  await f.host.game.settings.set("probably-just-a-rat", "rememberHidden", true);
+  f.update();
+  const snapshot = f.store.get("enemy").snapshot;
+  const image = f.tracker.renderer.textures.get("enemy").texture;
+  f.enemy.document.hidden = true;
+  for (const key of ["x", "y", "name", "texture"])
+    Object.defineProperty(f.enemy.document, key, {
+      get() {
+        throw new Error("Hidden document read");
+      }
+    });
+  Object.defineProperty(f.enemy, "position", {
+    get() {
+      throw new Error("Hidden geometry read");
+    }
+  });
+  f.update(f.enemy);
+  assert.equal(f.store.get("enemy").snapshot, snapshot);
+  assert.equal(f.store.get("enemy").state, "remembered");
+  assert.equal(f.tracker.renderer.textures.get("enemy").texture, image);
+  assert.equal(
+    f.tracker.renderer.markers.get("enemy").container.position.x,
+    snapshot.x
+  );
+  f.advance(59000);
+  f.update(f.enemy);
+  f.advance(1000);
+  assert.equal(f.store.size, 0);
+  assert.equal(f.tracker.renderer.markers.size, 0);
+  assert.equal(f.tracker.failed, false);
+  f.tracker.suspend();
+});
+
+test("Hidden memory never reveals unknown tokens and turning the GM rule off cannot resurrect them", async () => {
+  const f = fixture();
+  await f.host.game.settings.set("probably-just-a-rat", "rememberHidden", true);
+  f.enemy.document.hidden = true;
+  f.update();
+  assert.equal(f.store.size, 0);
+  f.enemy.document.hidden = false;
+  f.update();
+  f.enemy.document.hidden = true;
+  f.update();
+  assert.equal(f.store.remembered().length, 1);
+  await f.host.game.settings.set(
+    "probably-just-a-rat",
+    "rememberHidden",
+    false
+  );
+  f.frame();
+  assert.equal(f.store.size, 0);
+  await f.host.game.settings.set("probably-just-a-rat", "rememberHidden", true);
+  f.frame();
+  assert.equal(f.store.size, 0);
+  f.enemy.document.hidden = false;
+  f.update();
+  f.enemy.document.hidden = true;
+  f.enemy.document.override = "off";
+  f.update();
+  assert.equal(f.store.size, 0);
+  f.tracker.suspend();
+});
+
+test("blinded observers lose visual contact even if the target's rendered visibility is stale", () => {
+  const f = fixture();
+  f.update();
+  const snapshot = f.store.get("enemy").snapshot;
+  f.source.isBlinded = true;
+  f.update();
+  assert.equal(f.store.get("enemy").state, "remembered");
+  assert.equal(f.store.get("enemy").snapshot, snapshot);
+  f.source.isBlinded = false;
+  f.update();
+  assert.equal(f.store.get("enemy").state, "observed");
   assert.equal(f.tracker.renderer.markers.size, 0);
   f.tracker.suspend();
 });

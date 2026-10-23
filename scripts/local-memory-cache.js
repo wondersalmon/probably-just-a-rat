@@ -15,7 +15,129 @@ export class LocalMemoryCache {
     this.now = now;
   }
   lastWrite = -Infinity;
+  lastRetainedWrite = -Infinity;
+  lastRetainedContext = "";
   warned = false;
+
+  /** Retained scenes keep bounded checkpoints isolated by the complete vision context.
+   * @param {string} context
+   */
+  readRetained(context) {
+    try {
+      const entry = this.retainedEntries()[context];
+      const elapsedMs = this.now() - entry?.savedAt;
+      if (
+        !entry ||
+        !Number.isFinite(entry.savedAt) ||
+        !Number.isFinite(elapsedMs) ||
+        elapsedMs < 0 ||
+        entry.state?.contextKey !== context
+      )
+        return null;
+      return {
+        state: entry.state,
+        images:
+          entry.images && typeof entry.images === "object" ? entry.images : {},
+        elapsedMs
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /** @returns {Record<string, {savedAt: number, state: import("../types/memory.js").MemoryCheckpoint, images: Record<string, string>}>} */
+  retainedEntries() {
+    const key = this.key();
+    const raw = key && this.host.localStorage?.getItem(`${key}:retained`);
+    if (!raw || raw.length > MAX_SIZE) return Object.create(null);
+    const saved = JSON.parse(raw);
+    return saved.version === 1 &&
+      saved.entries &&
+      typeof saved.entries === "object"
+      ? saved.entries
+      : Object.create(null);
+  }
+
+  /** @param {import("./core/memory-store.js").MemoryStore} store
+   * @param {import("./foundry/marker-renderer.js").MarkerRenderer} renderer
+   * @param {boolean} [force]
+   */
+  saveRetained(store, renderer, force = true) {
+    const key = this.key();
+    if (!key || !this.host.localStorage) return;
+    const state = store.checkpoint();
+    if (!state.contextKey) return;
+    if (
+      !force &&
+      state.contextKey === this.lastRetainedContext &&
+      this.now() - this.lastRetainedWrite < 500
+    )
+      return;
+    try {
+      const entries = this.retainedEntries();
+      delete entries[state.contextKey];
+      if (state.records.length) {
+        /** @type {Record<string, string>} */
+        const images = Object.create(null);
+        let size = JSON.stringify(state).length;
+        for (const record of state.records) {
+          const image = renderer.savedImage(record.tokenId);
+          if (image && size + image.length < MAX_SIZE - 2000) {
+            images[record.tokenId] = image;
+            size += image.length;
+          }
+        }
+        entries[state.contextKey] = { savedAt: this.now(), state, images };
+      }
+      const ordered = Object.entries(entries)
+        .reverse()
+        .sort((a, b) => b[1].savedAt - a[1].savedAt);
+      const bounded = Object.fromEntries(ordered.slice(0, 12));
+      let data = JSON.stringify({ version: 1, entries: bounded });
+      while (data.length > MAX_SIZE && Object.keys(bounded).length > 1) {
+        delete bounded[Object.keys(bounded).at(-1) ?? ""];
+        data = JSON.stringify({ version: 1, entries: bounded });
+      }
+      if (data.length > MAX_SIZE)
+        throw new Error("Retained checkpoint too large");
+      if (Object.keys(bounded).length)
+        this.host.localStorage.setItem(`${key}:retained`, data);
+      else this.host.localStorage.removeItem(`${key}:retained`);
+      this.lastRetainedWrite = this.now();
+      this.lastRetainedContext = state.contextKey;
+    } catch {
+      // Failed updates must not resurrect a manually forgotten position.
+      this.clearRetained();
+      this.warn();
+    }
+  }
+
+  clearRetained() {
+    try {
+      const key = this.key();
+      if (key) this.host.localStorage?.removeItem(`${key}:retained`);
+    } catch {
+      this.warn();
+    }
+  }
+
+  /** @param {string} context */
+  removeRetained(context) {
+    try {
+      const key = this.key();
+      if (!key) return;
+      const entries = this.retainedEntries();
+      delete entries[context];
+      if (Object.keys(entries).length)
+        this.host.localStorage?.setItem(
+          `${key}:retained`,
+          JSON.stringify({ version: 1, entries })
+        );
+      else this.host.localStorage?.removeItem(`${key}:retained`);
+    } catch {
+      this.clearRetained();
+    }
+  }
 
   key() {
     const { world, user } = this.host.game;

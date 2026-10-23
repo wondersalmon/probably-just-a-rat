@@ -1,5 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { localize, format } from "../localization.js";
+import { openCurrentSceneMemorySettings } from "./scene-config.js";
 
 /** A native standalone view of the same permission-checked API used by Adventurer HUD. */
 export class RatControlPanel {
@@ -30,7 +31,7 @@ export class RatControlPanel {
     tokens.tools ??= {};
     tokens.tools[MODULE_ID] = {
       name: MODULE_ID,
-      title: "RAT.Controls.Title",
+      title: localize(this.host, "RAT.Controls.Title"),
       icon: "fa-solid fa-mouse-field",
       order:
         Math.max(
@@ -56,7 +57,7 @@ export class RatControlPanel {
         id: "rat-memory-controls",
         classes: ["rat-memory-controls"],
         window: {
-          title: "RAT.Controls.Title",
+          title: localize(panel.host, "RAT.Controls.Title"),
           icon: "fa-solid fa-mouse-field",
           resizable: false
         },
@@ -166,7 +167,18 @@ export class RatControlPanel {
       "fa-gear"
     );
     settings.disabled = !this.host.game.settings.sheet;
-    heading.append(clear, settings);
+    heading.append(clear);
+    if (this.host.game.user.isGM) {
+      const visibility = this.button(
+        "RAT.Controls.SceneVisibility",
+        "scene-visibility",
+        "fa-eye"
+      );
+      visibility.disabled =
+        !this.host.canvas?.ready || !this.host.canvas.scene?.isOwner;
+      heading.append(visibility);
+    }
+    heading.append(settings);
     const list = root.appendChild(doc.createElement("div"));
     list.className = "rat-controls-list";
     for (const record of records) {
@@ -221,7 +233,17 @@ export class RatControlPanel {
       .closest("[data-memory-id]")
       ?.getAttribute("data-memory-id");
     try {
-      if (action === "settings") {
+      if (action === "scene-visibility") {
+        button.disabled = true;
+        try {
+          if (!(await openCurrentSceneMemorySettings(this.host)))
+            this.host.ui.notifications.warn(
+              localize(this.host, "RAT.Settings.SceneMemory.Unavailable")
+            );
+        } finally {
+          this.refresh();
+        }
+      } else if (action === "settings") {
         const sheet = this.host.game.settings.sheet;
         await sheet.render({ force: true });
         if (!this.open || this.disposed) return;

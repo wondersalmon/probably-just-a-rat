@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { sceneRetainsMemory, sceneMemoryMode } from "../settings.js";
 
 /** Isolated native v14 boundary. External engine objects are intentionally opaque. */
 export class VisibilityAdapter {
@@ -19,12 +20,17 @@ export class VisibilityAdapter {
     if (
       !canvas?.ready ||
       !canvas.scene ||
+      sceneMemoryMode(canvas.scene) === "disabled" ||
       !canvas.level ||
       !game.user ||
       !canvas.visibility?.tokenVision
     )
       return null;
-    if (game.settings.get(MODULE_ID, "combatOnly") && !this.combat())
+    if (
+      game.settings.get(MODULE_ID, "combatOnly") &&
+      !sceneRetainsMemory(canvas.scene) &&
+      !this.combat()
+    )
       return null;
     if (
       typeof canvas.visibility._createVisibilityTestConfig !== "function" ||

@@ -212,15 +212,15 @@ test("rediscovery releases a baked grayscale texture while preserving the observ
   tracker.suspend();
 });
 
-test("caption choices preserve legacy booleans and offer contrast without another setting", async () => {
+test("legacy client caption choices inherit the GM policy and retain an explicit contrast preference", async () => {
   const f = runtimeHost();
   registerSettings(f.host.game.settings, () => {});
-  assert.equal(f.settings.size, 11);
+  assert.equal(f.settings.size, 17);
   for (const [legacy, expected] of [
-    [true, "standard"],
-    ["true", "standard"],
-    [false, "off"],
-    ["false", "off"],
+    [true, "world"],
+    ["true", "world"],
+    [false, "world"],
+    ["false", "world"],
     ["contrast", "contrast"]
   ]) {
     f.settings.get("labels").value = legacy;
@@ -229,9 +229,9 @@ test("caption choices preserve legacy booleans and offer contrast without anothe
     const appearance = resolveAppearance({
       opacity: 50,
       grayscale: 0,
-      labels: legacy
+      labels: expected
     });
-    assert.equal(appearance.labels, expected !== "off");
+    assert.equal(appearance.labels, true);
     assert.equal(appearance.highContrast, expected === "contrast");
   }
   f.settings.get("labels").value = "contrast";

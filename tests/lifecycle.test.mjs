@@ -4,7 +4,142 @@ import { installModule } from "../scripts/lifecycle.js";
 import { runtimeHost, token } from "./helpers/runtime.mjs";
 import { MODULE_ID } from "../scripts/constants.js";
 
-test("bootstrap starts automatically with five client settings and six GM rules", () => {
+test("native position refreshes preserve the last visible position and heading even when scheduled observations coalesce", async () => {
+  const f = runtimeHost();
+  const enemy = token(f.host);
+  const controller = installModule(f.host);
+  f.emit("init");
+  f.emit("ready");
+  f.frame();
+  await f.host.game.settings.set(MODULE_ID, "markerStyle", "footprints");
+  await f.host.game.settings.set(MODULE_ID, "customMarkerRotate", true);
+  f.frame();
+  enemy.document.x = 1800;
+  enemy.animationContexts.set("movement", {});
+  for (const x of [100, 200, 300, 400, 500]) {
+    enemy.position.x = x;
+    enemy.mesh.position.x = x + 50;
+    f.emit("refreshToken", enemy, {
+      refreshPosition: true,
+      refreshVisibility: true
+    });
+  }
+  // The queued pass only sees the already invisible token at the end of a long move.
+  enemy.visual = enemy.visible = false;
+  enemy.position.x = 1800;
+  enemy.mesh.position.x = 1850;
+  enemy.animationContexts.clear();
+  f.emit("refreshToken", enemy, {
+    refreshPosition: true,
+    refreshVisibility: true
+  });
+  f.frame();
+  const root = f.host.canvas.interface.children.find(
+    child => child.name === "probably-just-a-rat-memory"
+  );
+  const marker = root.children[0];
+  assert.equal(marker.position.x, 500);
+  assert.equal(marker.children[0].angle, 90);
+  assert.equal(
+    f.host.game.modules.get(MODULE_ID).api.getDiagnostics().failed,
+    false
+  );
+  controller.dispose();
+});
+
+test("immediate native refresh sampling cannot observe Hidden tokens, special detection or another vision context", () => {
+  const f = runtimeHost();
+  const enemy = token(f.host);
+  const controller = installModule(f.host);
+  f.emit("init");
+  f.emit("ready");
+  f.frame();
+  const root = () =>
+    f.host.canvas.interface.children.find(
+      child => child.name === "probably-just-a-rat-memory"
+    );
+  enemy.visual = false;
+  enemy.position.x = 900;
+  enemy.mesh.position.x = 950;
+  f.emit("refreshToken", enemy, { refreshPosition: true });
+  f.frame();
+  assert.equal(root().children[0].position.x, 20);
+  enemy.document.hidden = true;
+  Object.defineProperty(enemy, "position", {
+    get() {
+      throw new Error("Hidden position read");
+    }
+  });
+  f.emit("refreshToken", enemy, { refreshPosition: true });
+  f.frame();
+  assert.equal(root().children.length, 0);
+  const other = token(f.host, "other");
+  f.observer.allowed = false;
+  f.emit("refreshToken", other, { refreshPosition: true });
+  f.frame();
+  const diagnostics = f.host.game.modules.get(MODULE_ID).api.getDiagnostics();
+  assert.equal(diagnostics.failed, false);
+  assert.equal(diagnostics.remembered, 0);
+  assert.equal(diagnostics.markers, 0);
+  controller.dispose();
+});
+
+test("SceneConfig's overland rule updates immediately and keeps known Hidden positions despite combat-only changes", async () => {
+  const f = runtimeHost();
+  let overland = false;
+  f.host.canvas.scene.getFlag = (_namespace, key) =>
+    key === "overlandMemory" && overland;
+  const enemy = token(f.host);
+  const controller = installModule(f.host);
+  f.emit("init");
+  f.emit("ready");
+  f.frame();
+  overland = true;
+  f.emit("updateScene", f.host.canvas.scene);
+  f.frame();
+  enemy.document.hidden = true;
+  enemy.visual = enemy.visible = false;
+  f.emit("updateToken", enemy.document, { hidden: true });
+  const diagnostics = () =>
+    f.host.game.modules.get(MODULE_ID).api.getDiagnostics();
+  assert.equal(diagnostics().remembered, 1);
+  assert.equal(diagnostics().markers, 1);
+  await f.host.game.settings.set(MODULE_ID, "combatOnly", true);
+  f.frame();
+  assert.equal(diagnostics().remembered, 1);
+  assert.equal(diagnostics().markers, 1);
+  assert.equal(f.timers.size, 0);
+  overland = false;
+  f.emit("updateScene", f.host.canvas.scene);
+  f.frame();
+  assert.equal(diagnostics().remembered, 0);
+  assert.equal(diagnostics().markers, 0);
+  assert.equal(diagnostics().failed, false);
+  controller.dispose();
+});
+
+test("module loading before game.release exists still registers settings and the token tool", () => {
+  const f = runtimeHost();
+  const release = f.host.game.release;
+  delete f.host.game.release;
+  const controller = installModule(f.host);
+  const earlyControls = { tokens: { tools: {} } };
+  f.emit("getSceneControlButtons", earlyControls);
+  assert.equal(earlyControls.tokens.tools[MODULE_ID], undefined);
+  f.host.game.release = release;
+  f.emit("init");
+  f.emit("ready");
+  f.frame();
+  const controls = { tokens: { tools: {} } };
+  f.emit("getSceneControlButtons", controls);
+  assert.equal(f.settings.get("markerStyle").default, "ghost");
+  assert.equal(controls.tokens.tools[MODULE_ID].visible, true);
+  assert.equal(f.host.game.modules.get(MODULE_ID).api.stage, "observation");
+  controller.dispose();
+  assert.equal(f.listeners.size, 0);
+});
+
+test("bootstrap starts automatically with six client settings and eleven GM rules", () => {
   const f = runtimeHost();
   const controller = installModule(f.host);
   f.emit("init");
@@ -15,20 +150,30 @@ test("bootstrap starts automatically with five client settings and six GM rules"
       .filter(([_key, setting]) => setting.config)
       .map(([key]) => key),
     [
+      "language",
+      "markerStyle",
+      "customMarkerImage",
+      "customMarkerRotate",
       "opacity",
       "grayscale",
       "outline",
       "outlineColor",
+      "captionStyle",
       "labels",
       "sharePings",
       "showNames",
       "showRounds",
+      "rememberHidden",
       "combatOnly",
       "memoryRounds",
       "memoryMinutes"
     ]
   );
-  assert.equal(f.settings.size, 11);
+  assert.equal(f.settings.size, 17);
+  assert.equal(f.settings.get("rememberHidden").scope, "world");
+  assert.equal(f.settings.get("rememberHidden").default, false);
+  assert.equal(f.settings.get("markerStyle").scope, "world");
+  assert.equal(f.settings.get("customMarkerImage").scope, "world");
   assert.equal(f.settings.get("combatOnly").scope, "world");
   assert.equal(f.settings.get("combatOnly").default, false);
   assert.equal(f.settings.get("memoryRounds").scope, "world");
@@ -39,7 +184,7 @@ test("bootstrap starts automatically with five client settings and six GM rules"
   assert.equal(
     [...f.settings.values()].filter(setting => setting.scope === "client")
       .length,
-    5
+    6
   );
   assert.equal(f.settings.get("opacity").default, 50);
   assert.equal(f.settings.has("style"), false);
@@ -47,7 +192,8 @@ test("bootstrap starts automatically with five client settings and six GM rules"
   assert.equal(f.settings.get("showRounds").scope, "world");
   assert.equal(f.settings.get("sharePings").scope, "world");
   assert.equal(f.settings.get("sharePings").default, "true");
-  assert.equal(f.settings.has("language"), false);
+  assert.equal(f.settings.get("language").scope, "client");
+  assert.equal(f.settings.get("language").default, "foundry");
   assert.equal(f.settings.has("showMarkers"), false);
   assert.equal(f.menus.size, 0);
   assert.equal("openMemory" in f.host.game.modules.get(MODULE_ID).api, false);
@@ -160,20 +306,20 @@ test("elapsed-round captions start on loss, follow combat updates and obey the G
   const text = () =>
     marker.children.find(child => child.name === "rat-ghost-caption")
       .children[1].text;
-  assert.equal(text(), "Known enemy\nRAT.RoundsSinceLoss 0");
+  assert.equal(text(), "Known enemy\nRAT.LastPosition\nRAT.RoundsSinceLoss 0");
   const api = f.host.game.modules.get(MODULE_ID).api.memory;
   let updates = 0;
   api.subscribe(() => updates++);
   f.host.game.combat.round = 6;
   f.emit("updateCombat");
   f.frame();
-  assert.equal(text(), "Known enemy\nRAT.RoundsSinceLoss 1");
+  assert.equal(text(), "Known enemy\nRAT.LastPosition\nRAT.RoundsSinceLoss 1");
   assert.equal(api.list()[0].label, "RAT.RoundsSinceLoss 1");
   assert.ok(updates > 0);
   f.host.game.combat.round = 4;
   f.emit("updateCombat");
   f.frame();
-  assert.equal(text(), "Known enemy\nRAT.RoundsSinceLoss 1");
+  assert.equal(text(), "Known enemy\nRAT.LastPosition\nRAT.RoundsSinceLoss 1");
   await f.host.game.settings.set(MODULE_ID, "showRounds", false);
   f.frame();
   assert.equal(text(), "Known enemy\nRAT.LastPosition");
@@ -184,7 +330,7 @@ test("elapsed-round captions start on loss, follow combat updates and obey the G
   );
   await f.host.game.settings.set(MODULE_ID, "showRounds", true);
   f.frame();
-  assert.equal(text(), "Known enemy\nRAT.RoundsSinceLoss 1");
+  assert.equal(text(), "Known enemy\nRAT.LastPosition\nRAT.RoundsSinceLoss 1");
   controller.dispose();
 });
 
@@ -327,6 +473,35 @@ test("ready binds already rendered combat tracker and popout once and disposal r
   controller.dispose();
   assert.equal(app.listeners.size, 0);
   assert.equal(app.popout.listeners.size, 0);
+});
+
+test("native Hidden hook preserves only known memory when the GM rule is enabled and clears it when disabled", async () => {
+  const f = runtimeHost();
+  const controller = installModule(f.host);
+  const enemy = token(f.host);
+  f.emit("init");
+  f.emit("ready");
+  f.frame();
+  await f.host.game.settings.set(MODULE_ID, "rememberHidden", true);
+  f.frame();
+  enemy.document.hidden = true;
+  f.emit("updateToken", enemy.document, { hidden: true });
+  const api = f.host.game.modules.get(MODULE_ID).api.memory;
+  assert.equal(api.list().length, 1);
+  f.frame();
+  assert.equal(api.list().length, 1);
+  enemy.document.hidden = false;
+  f.emit("updateToken", enemy.document, { hidden: false });
+  f.frame();
+  assert.equal(api.list().length, 0);
+  await f.host.game.settings.set(MODULE_ID, "rememberHidden", false);
+  f.frame();
+  enemy.document.hidden = true;
+  f.emit("updateToken", enemy.document, { hidden: true });
+  assert.equal(api.list().length, 0);
+  f.frame();
+  assert.equal(api.list().length, 0);
+  controller.dispose();
 });
 
 test("unsupported Foundry generation leaves the canvas integration inactive", () => {
