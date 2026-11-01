@@ -1,7 +1,13 @@
 import { test, expect } from "@playwright/test";
 
-async function settingsForm(page, gm = true, captionStyle = "standard") {
-  await page.goto(`/?lang=ru${gm ? "&gm" : ""}`);
+async function settingsForm(
+  page,
+  gm = true,
+  captionStyle = "standard",
+  systemId = "dnd5e",
+  language = "ru"
+) {
+  await page.goto(`/?lang=${language}&system=${systemId}${gm ? "&gm" : ""}`);
   await page.waitForFunction(() => window.__ratFixture?.tracker.context);
   await page.addStyleTag({ url: "/styles/control-panel.css" });
   await page.evaluate(
@@ -19,7 +25,11 @@ async function settingsForm(page, gm = true, captionStyle = "standard") {
           register: (_namespace, key, config) =>
             definitions.push({ key, ...config })
         },
-        () => {}
+        () => {},
+        undefined,
+        undefined,
+        undefined,
+        tracker.host.game.system?.id
       );
       const form = document.createElement("form");
       form.id = "review-settings";
@@ -80,21 +90,31 @@ async function settingsForm(page, gm = true, captionStyle = "standard") {
       form.append(save);
       form.addEventListener("submit", async event => {
         event.preventDefault();
-        for (const config of definitions) {
-          const input = form.querySelector(
-            `[name="probably-just-a-rat.${config.key}"]`
+        // Reduced Foundry FormDataExtended boundary: DOM field order, disabled
+        // fields omitted, typed values and the native formdata event.
+        const object = {};
+        for (const input of form.elements) {
+          if (!input.name || input.disabled) continue;
+          const config = definitions.find(
+            config => input.name === `probably-just-a-rat.${config.key}`
           );
-          if (!input || input.disabled) continue;
-          await tracker.host.game.settings.set(
-            "probably-just-a-rat",
-            config.key,
+          if (!config) continue;
+          object[input.name] =
             input.type === "checkbox"
               ? input.checked
               : config.type === Number
                 ? Number(input.value)
-                : input.value
-          );
+                : input.value;
         }
+        const submission = new Event("formdata");
+        Object.defineProperty(submission, "formData", { value: { object } });
+        form.dispatchEvent(submission);
+        for (const [name, value] of Object.entries(object))
+          await tracker.host.game.settings.set(
+            "probably-just-a-rat",
+            name.slice("probably-just-a-rat.".length),
+            value
+          );
         const { configureLocalization } =
           await import("/scripts/localization.js");
         await configureLocalization(tracker.host);
@@ -106,6 +126,131 @@ async function settingsForm(page, gm = true, captionStyle = "standard") {
     { gm, captionStyle }
   );
 }
+
+for (const language of ["en", "ru"])
+  test(`Daggerheart settings preserve saved limits and preview encounter mode without applying it (${language})`, async ({
+    page
+  }) => {
+    await settingsForm(page, true, "standard", "daggerheart", language);
+    const root = page.locator("#review-settings");
+    const mode = root.locator('[name$=".daggerheartCombatMemory"]');
+    const rounds = root.locator('[name$=".memoryRounds"]');
+    const counter = root.locator('[name$=".showRounds"]');
+    const caption = root.locator(".rat-preview-caption");
+    const stepText =
+      language === "ru"
+        ? "Прошло шагов spotlight: 1"
+        : "Spotlight steps unseen: 1";
+    await expect(caption).toContainText(stepText);
+    await root.locator('[data-rat-settings-tab="memory"]').click();
+    await expect(mode).toHaveValue("steps");
+    await expect(rounds).toBeVisible();
+    await expect(
+      root.locator("label").filter({
+        hasText:
+          language === "ru"
+            ? "Срок в столкновении (шаги spotlight)"
+            : "Encounter lifetime (spotlight steps)"
+      })
+    ).toBeVisible();
+    await rounds.fill("0");
+    expect(await rounds.evaluate(input => input.checkValidity())).toBe(false);
+    await mode.selectOption("encounter");
+    await expect(rounds).toBeHidden();
+    await expect(rounds).toBeDisabled();
+    expect(await rounds.evaluate(input => input.validationMessage)).toBe("");
+    await expect(counter).toBeDisabled();
+    await expect(caption).not.toContainText(stepText);
+    expect(
+      await page.evaluate(() =>
+        __ratFixture.tracker.host.game.settings.get(
+          "probably-just-a-rat",
+          "daggerheartCombatMemory"
+        )
+      )
+    ).toBe("steps");
+    await page.evaluate(() => {
+      const preview = window.__reviewPreview;
+      const [app] = preview.bindings.keys();
+      preview.mount(app, document.getElementById("review-settings"));
+    });
+    await expect(mode).toHaveValue("encounter");
+    await expect(rounds).toBeDisabled();
+    await root.locator('button[type="submit"]').click();
+    await page.waitForFunction(() => window.__reviewSaved);
+    expect(
+      await page.evaluate(() =>
+        __ratFixture.tracker.host.game.settings.get(
+          "probably-just-a-rat",
+          "daggerheartCombatMemory"
+        )
+      )
+    ).toBe("encounter");
+    expect(
+      await page.evaluate(() =>
+        __ratFixture.tracker.host.game.settings.get(
+          "probably-just-a-rat",
+          "memoryRounds"
+        )
+      )
+    ).toBe(2);
+    expect(
+      await page.evaluate(() =>
+        __ratFixture.tracker.host.game.settings.get(
+          "probably-just-a-rat",
+          "showRounds"
+        )
+      )
+    ).toBe(true);
+    await mode.selectOption("steps");
+    await expect(rounds).toBeEnabled();
+    await expect(rounds).toBeVisible();
+    expect(await rounds.evaluate(input => input.checkValidity())).toBe(false);
+    await rounds.fill("3");
+    expect(await rounds.evaluate(input => input.checkValidity())).toBe(true);
+    await root.locator('[data-rat-settings-tab="marker"]').click();
+    await expect(caption).toContainText(stepText);
+  });
+
+test("Daggerheart scene summaries describe the selected expiry mode and Long memory", async ({
+  page
+}) => {
+  await settingsForm(page, true, "standard", "daggerheart");
+  await page.evaluate(async () => {
+    const { addSceneMemoryOptions } =
+      await import("/scripts/foundry/scene-config.js");
+    const { host } = __ratFixture.tracker;
+    host.document = document;
+    const root = document.createElement("section");
+    root.id = "dh-scene-memory";
+    root.className = "tab";
+    root.dataset.tab = "visibility";
+    document.body.append(root);
+    const app = {
+      id: "dh-scene",
+      isEditable: true,
+      document: { isOwner: true }
+    };
+    addSceneMemoryOptions(host, app, root);
+    await host.game.settings.set(
+      "probably-just-a-rat",
+      "daggerheartCombatMemory",
+      "encounter"
+    );
+    root.querySelector("select").dispatchEvent(new Event("change"));
+  });
+  const root = page.locator("#dh-scene-memory");
+  await expect(root.locator(".rat-scene-effective-rules")).toContainText(
+    "до его завершения"
+  );
+  await root.locator("select").selectOption("long");
+  await expect(root.locator(".rat-scene-effective-rules")).toContainText(
+    "Без сроков"
+  );
+  await expect(root.locator(".rat-scene-effective-rules")).not.toContainText(
+    "шагов spotlight"
+  );
+});
 
 test("GM settings organize three tabs, native rules and all preview effects", async ({
   page
@@ -357,7 +502,11 @@ test("GM eye opens scene visibility settings and player panel omits it", async (
     };
     const { RatControlPanel } =
       await import("/scripts/foundry/control-panel.js");
-    const panel = new RatControlPanel(host, { list: () => [] }, () => {});
+    const panel = new RatControlPanel(
+      host,
+      { list: () => [], status: () => null },
+      () => {}
+    );
     panel.open = true;
     panel.window = { render: () => {} };
     document.body.append(panel.build());
@@ -376,7 +525,11 @@ test("GM eye opens scene visibility settings and player panel omits it", async (
     const { RatControlPanel } =
       await import("/scripts/foundry/control-panel.js");
     document.body.append(
-      new RatControlPanel(host, { list: () => [] }, () => {}).build()
+      new RatControlPanel(
+        host,
+        { list: () => [], status: () => null },
+        () => {}
+      ).build()
     );
   });
   await expect(eye).toHaveCount(0);

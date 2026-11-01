@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { encounterMemory, memoryTextKey } from "../system-profile.js";
 import { resolveAppearance, resolveCaptionStyle } from "../appearance.js";
 import { createBootPrints } from "./boot-prints.js";
 import { createPresenceTrace } from "./presence-trace.js";
@@ -442,11 +443,17 @@ export class MarkerRenderer {
 
   /** @param {Pick<import("../../types/memory.js").MemoryRecord, "snapshot"> & Partial<Pick<import("../../types/memory.js").MemoryRecord, "combatAgeFrom">>} record */
   label(record) {
+    if (encounterMemory(this.host.game.settings, this.host.game.system?.id))
+      return localize(this.host, "RAT.LastPosition");
     const rounds = this.store?.roundsSinceLoss(record);
     return ((this.host.game.user.isGM ? this.preview.showRounds : undefined) ??
       this.host.game.settings.get(MODULE_ID, "showRounds")) &&
       typeof rounds === "number"
-      ? format(this.host, "RAT.RoundsSinceLoss", { rounds })
+      ? format(
+          this.host,
+          memoryTextKey(this.host.game.system?.id, "RAT.RoundsSinceLoss"),
+          { rounds }
+        )
       : localize(this.host, "RAT.LastPosition");
   }
 

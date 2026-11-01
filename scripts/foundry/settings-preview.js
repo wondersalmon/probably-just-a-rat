@@ -6,6 +6,7 @@ import {
   updateCaptionControls,
   updateSceneMemoryLink,
   updateSettingsSample,
+  updateCombatMemoryControls,
   validateMemoryInputs
 } from "./settings-layout.js";
 
@@ -18,7 +19,7 @@ export class SettingsPreview {
     this.host = host;
     this.apply = apply;
   }
-  /** @type {Map<any, {root: HTMLElement, listener: (event: Event) => void, values: Partial<{markerStyle: string, customMarkerImage: string, opacity: number, grayscale: number, outline: boolean, outlineColor: string, labels: string, captionStyle: string, customMarkerRotate: boolean, showNames: boolean, showRounds: boolean}>}>} */
+  /** @type {Map<any, {root: HTMLElement, listener: (event: Event) => void, submission: (event: Event) => void, values: Partial<{markerStyle: string, customMarkerImage: string, opacity: number, grayscale: number, outline: boolean, outlineColor: string, labels: string, captionStyle: string, customMarkerRotate: boolean, showNames: boolean, showRounds: boolean, daggerheartCombatMemory: string}>}>} */
   bindings = new Map();
   /** @type {any} */
   ticker = null;
@@ -90,6 +91,7 @@ export class SettingsPreview {
       root,
       previous?.root.dataset?.ratSettingsSection
     );
+    updateCombatMemoryControls(this.host, root, values);
     validateMemoryInputs(this.host, root);
     updateCaptionControls(this.host, root, values);
     this.updateColorVisibility(root);
@@ -104,6 +106,19 @@ export class SettingsPreview {
         "range-picker[name], color-picker[name], file-picker[name], input[name], select[name]"
       );
       const name = field?.getAttribute("name");
+      if (name === `${MODULE_ID}.daggerheartCombatMemory`) {
+        if (
+          !this.host.game.user.isGM ||
+          !["steps", "encounter"].includes(target.value)
+        )
+          return;
+        values.daggerheartCombatMemory = target.value;
+        updateCombatMemoryControls(this.host, root, values);
+        validateMemoryInputs(this.host, root);
+        updateSettingsSample(this.host, root, values);
+        // Policy drafts affect the form sample only; observations expire after Save.
+        return;
+      }
       const key =
         name === `${MODULE_ID}.markerStyle`
           ? "markerStyle"
@@ -214,10 +229,26 @@ export class SettingsPreview {
     };
     root.addEventListener("input", listener);
     root.addEventListener("change", listener);
-    this.bindings.set(app, { root, listener, values });
+    const submission = (/** @type {Event} */ event) => {
+      const data =
+        /** @type {Event & {formData?: {object?: Record<string, unknown>}}} */ (
+          event
+        ).formData?.object;
+      const key = `${MODULE_ID}.daggerheartCombatMemory`;
+      if (!data || !Object.hasOwn(data, key)) return;
+      // Foundry saves in form-data order. Apply a new counter limit before
+      // enabling step expiry, so the old limit cannot expire records mid-save.
+      const mode = data[key];
+      delete data[key];
+      data[key] = mode;
+    };
+    root.addEventListener("formdata", submission, { capture: true });
+    this.bindings.set(app, { root, listener, submission, values });
   }
   refreshCaptionPolicy() {
     for (const { root, values } of this.bindings.values()) {
+      updateCombatMemoryControls(this.host, root, values);
+      validateMemoryInputs(this.host, root);
       updateCaptionControls(this.host, root, values);
       updateSettingsSample(this.host, root, values);
     }
@@ -229,15 +260,19 @@ export class SettingsPreview {
   refreshLanguage() {
     for (const { root, values } of this.bindings.values()) {
       translateSettings(this.host, root);
+      updateCombatMemoryControls(this.host, root, values);
       updateCaptionControls(this.host, root, values);
       validateMemoryInputs(this.host, root);
       updateSettingsSample(this.host, root, values);
     }
   }
-  /** @param {{root: HTMLElement, listener: (event: Event) => void}} binding */
+  /** @param {{root: HTMLElement, listener: (event: Event) => void, submission: (event: Event) => void}} binding */
   detach(binding) {
     binding.root.removeEventListener("input", binding.listener);
     binding.root.removeEventListener("change", binding.listener);
+    binding.root.removeEventListener("formdata", binding.submission, {
+      capture: true
+    });
   }
   /** @param {any} app */
   unmount(app) {

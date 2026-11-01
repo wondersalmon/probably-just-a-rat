@@ -1,6 +1,7 @@
 import { MODULE_ID } from "./constants.js";
 import { contextKey } from "./core/context.js";
 import { localize, snapshotName } from "./localization.js";
+import { supportReport } from "./memory-status.js";
 
 /** Prepared client-local records only. Handles expire with their original snapshot/context.
  * @param {import('../types/foundry.js').FoundryHost} host
@@ -15,7 +16,12 @@ export function createMemoryAPI(host, tracker, pings) {
   let handles = new Map();
   const current = () => {
     if (disposed || tracker.failed) return false;
-    const context = tracker.adapter.context();
+    let context;
+    try {
+      context = tracker.adapter.inspectContext().context;
+    } catch {
+      return false;
+    }
     if (!context || contextKey(context) !== tracker.context) return false;
     tracker.store.setCombat(tracker.adapter.combat());
     return true;
@@ -55,6 +61,12 @@ export function createMemoryAPI(host, tracker, pings) {
   const api = Object.freeze({
     version: 1,
     list,
+    status: () => (disposed ? null : tracker.status()),
+    supportReport() {
+      if (disposed || !host.game.user?.isGM) return null;
+      const { state, rules } = tracker.status();
+      return supportReport(host, state, rules);
+    },
     /** @param {string} id @param {MouseEvent} event */
     ping(id, event) {
       const record = resolve(id);

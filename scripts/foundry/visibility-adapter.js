@@ -16,28 +16,34 @@ export class VisibilityAdapter {
   }
 
   context() {
+    const state = this.inspectContext();
+    if (state.reason === "unsupported")
+      throw new Error("Required Foundry v14 canvas API is unavailable.");
+    return state.context;
+  }
+
+  /** Same context gate for observation and safe, target-independent status. */
+  inspectContext() {
     const { canvas, game } = this.host;
-    if (
-      !canvas?.ready ||
-      !canvas.scene ||
-      sceneMemoryMode(canvas.scene) === "disabled" ||
-      !canvas.level ||
-      !game.user ||
-      !canvas.visibility?.tokenVision
-    )
-      return null;
+    if (!canvas?.ready || !canvas.scene || !canvas.level || !game.user)
+      return { reason: "no-scene", context: null };
+    if (sceneMemoryMode(canvas.scene) === "disabled")
+      return { reason: "disabled", context: null };
+    if (!canvas.visibility?.tokenVision)
+      return { reason: "token-vision", context: null };
     if (
       game.settings.get(MODULE_ID, "combatOnly") &&
       !sceneRetainsMemory(canvas.scene) &&
       !this.combat()
     )
-      return null;
+      return { reason: "combat-only", context: null };
     if (
       typeof canvas.visibility._createVisibilityTestConfig !== "function" ||
       !canvas.app?.ticker?.add ||
-      !this.host.PIXI?.Container
+      !this.host.PIXI?.Container ||
+      !canvas.effects?.visionSources
     )
-      throw new Error("Required Foundry v14 canvas API is unavailable.");
+      return { reason: "unsupported", context: null };
     const sources = [...canvas.effects.visionSources.entries()].filter(
       ([_id, source]) => {
         const token = source.object;
@@ -54,25 +60,34 @@ export class VisibilityAdapter {
         );
       }
     );
-    if (!sources.length) return null;
+    if (!sources.length)
+      return {
+        reason: game.user.isGM ? "select-token" : "no-source",
+        context: null
+      };
     return {
-      sceneId: canvas.scene.id,
-      userId: game.user.id,
-      levelId: canvas.level.id,
-      sourceIds: sources.map(([id]) => String(id)),
-      mode: JSON.stringify(
-        sources
-          .map(([id, source]) => [id, source.visionMode?.id ?? "basic"])
-          .sort()
-      ),
-      permissionKey: JSON.stringify([
-        game.user.role,
-        game.user.isGM,
-        sources
-          .map(([id, source]) => [id, source.object.document.isOwner])
-          .sort()
-      ]),
-      sources: sources.map(([_id, source]) => source)
+      reason: sources.every(([_id, source]) => source.isBlinded)
+        ? "blinded"
+        : "active",
+      context: {
+        sceneId: canvas.scene.id,
+        userId: game.user.id,
+        levelId: canvas.level.id,
+        sourceIds: sources.map(([id]) => String(id)),
+        mode: JSON.stringify(
+          sources
+            .map(([id, source]) => [id, source.visionMode?.id ?? "basic"])
+            .sort()
+        ),
+        permissionKey: JSON.stringify([
+          game.user.role,
+          game.user.isGM,
+          sources
+            .map(([id, source]) => [id, source.object.document.isOwner])
+            .sort()
+        ]),
+        sources: sources.map(([_id, source]) => source)
+      }
     };
   }
 
@@ -122,7 +137,7 @@ export class VisibilityAdapter {
     const inBuffer = points.every(
       /** @param {any} point */ point => !rect.contains(point.x, point.y)
     );
-    // Deliberately exclude special detection, sound and light sources granting omniscient vision.
+    // Deliberately exclude nonvisual senses and light sources granting omniscient vision.
     for (const source of context.sources) {
       if (source.isBlinded || inBuffer === rect.contains(source.x, source.y))
         continue;
@@ -132,6 +147,35 @@ export class VisibilityAdapter {
         if (mode && detector?.testVisibility(source, mode, config) === true) {
           this.lastVisibilityReason = "observed";
           return true;
+        }
+      }
+      const mode = source.object.document.detectionModes.seeInvisibility;
+      const detector = CONFIG.Canvas.detectionModes.seeInvisibility;
+      if (
+        !mode?.enabled ||
+        detector?.testVisibility(source, mode, config) !== true
+      )
+        continue;
+      // See Invisibility does not itself require illumination. Test each detected
+      // point without the target's invisibility, using the SAME source's ordinary
+      // sight/light modes. Never combine detection at one point with light at another.
+      for (const test of config.tests) {
+        const pointConfig = { ...config, tests: [test] };
+        if (detector.testVisibility(source, mode, pointConfig) !== true)
+          continue;
+        for (const id of ["basicSight", "lightPerception"]) {
+          const sightMode = source.object.document.detectionModes[id];
+          const sightDetector = CONFIG.Canvas.detectionModes[id];
+          if (
+            sightMode &&
+            sightDetector?.testVisibility(source, sightMode, {
+              ...pointConfig,
+              object: null
+            }) === true
+          ) {
+            this.lastVisibilityReason = "observed";
+            return true;
+          }
         }
       }
     }

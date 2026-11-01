@@ -1,15 +1,22 @@
 import { MODULE_ID, MEMORY_DEFAULTS } from "./constants.js";
 import { DEFAULT_OUTLINE_COLOR } from "./appearance.js";
+import {
+  encounterMemory,
+  isDaggerheart,
+  memoryTextKey
+} from "./system-profile.js";
 
 /** @param {import("../types/foundry.js").SettingsService} settings @param {(key: string) => void} onAppearance
  * @param {any} [ColorField] @param {any} [FilePathField] @param {any} [NumberField]
+ * @param {string} [systemId]
  */
 export function registerSettings(
   settings,
   onAppearance,
   ColorField,
   FilePathField,
-  NumberField
+  NumberField,
+  systemId
 ) {
   /** @type {Array<{key: string} & Pick<Parameters<import("../types/foundry.js").SettingsService["register"]>[2], "type" | "default" | "choices" | "range">>} */
   const definitions = [
@@ -141,8 +148,8 @@ export function registerSettings(
     onChange: () => onAppearance("showNames")
   });
   settings.register(MODULE_ID, "showRounds", {
-    name: "RAT.Settings.showRounds.Name",
-    hint: "RAT.Settings.showRounds.Hint",
+    name: memoryTextKey(systemId, "RAT.Settings.showRounds.Name"),
+    hint: memoryTextKey(systemId, "RAT.Settings.showRounds.Hint"),
     scope: "world",
     config: true,
     type: Boolean,
@@ -172,8 +179,8 @@ export function registerSettings(
     ["memoryMinutes", MEMORY_DEFAULTS.seconds / 60]
   ])
     settings.register(MODULE_ID, String(key), {
-      name: `RAT.Settings.${key}.Name`,
-      hint: `RAT.Settings.${key}.Hint`,
+      name: memoryTextKey(systemId, `RAT.Settings.${key}.Name`),
+      hint: memoryTextKey(systemId, `RAT.Settings.${key}.Hint`),
       scope: "world",
       config: true,
       type: NumberField
@@ -186,11 +193,29 @@ export function registerSettings(
             integer: false,
             validate: /** @param {unknown} candidate */ candidate =>
               isMemoryDurationValid(String(key), candidate),
-            validationError: `RAT.Settings.${key}.Validation`
+            validationError: memoryTextKey(
+              systemId,
+              `RAT.Settings.${key}.Validation`
+            )
           })
         : Number,
       default: value,
       onChange: () => onAppearance(String(key))
+    });
+  if (isDaggerheart(systemId))
+    settings.register(MODULE_ID, "daggerheartCombatMemory", {
+      name: "RAT.Settings.daggerheartCombatMemory.Name",
+      hint: "RAT.Settings.daggerheartCombatMemory.Hint",
+      scope: "world",
+      config: true,
+      type: String,
+      // Preserve the existing counter-based behavior and memoryRounds value.
+      default: "steps",
+      choices: {
+        steps: "RAT.Daggerheart.Mode.Steps",
+        encounter: "RAT.Daggerheart.Mode.Encounter"
+      },
+      onChange: () => onAppearance("daggerheartCombatMemory")
     });
 }
 
@@ -226,15 +251,18 @@ export function isMemoryDurationValid(key, value) {
 /** Read positive durations; malformed values fall back to defaults.
  * @param {import("../types/foundry.js").SettingsService} settings
  * @param {any} [scene]
+ * @param {string} [systemId]
  */
-export function memoryPolicy(settings, scene) {
+export function memoryPolicy(settings, scene, systemId) {
   const rounds = settings.get(MODULE_ID, "memoryRounds");
   const minutes = settings.get(MODULE_ID, "memoryMinutes");
   return {
     retainUntilRediscovered: sceneRetainsMemory(scene),
-    combatRounds: isMemoryDurationValid("memoryRounds", rounds)
-      ? Number(rounds)
-      : MEMORY_DEFAULTS.combatRounds,
+    combatRounds: encounterMemory(settings, systemId)
+      ? 0
+      : isMemoryDurationValid("memoryRounds", rounds)
+        ? Number(rounds)
+        : MEMORY_DEFAULTS.combatRounds,
     seconds: isMemoryDurationValid("memoryMinutes", minutes)
       ? Number(minutes) * 60
       : MEMORY_DEFAULTS.seconds

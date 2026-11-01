@@ -1,6 +1,6 @@
 {
   "name": "probably-just-a-rat",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Client-local last-seen token memory for Foundry VTT 14.",

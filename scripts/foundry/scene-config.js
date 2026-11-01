@@ -1,6 +1,7 @@
 import { MODULE_ID } from "../constants.js";
-import { format, localize } from "../localization.js";
-import { memoryPolicy, sceneMemoryMode } from "../settings.js";
+import { localize } from "../localization.js";
+import { sceneMemoryMode } from "../settings.js";
+import { memoryRules, memoryRulesText } from "../memory-status.js";
 
 /** Native SceneConfig flag; only the GM can enable exploration memory.
  * @param {import("../../types/foundry.js").FoundryHost} host
@@ -51,28 +52,11 @@ export function addSceneMemoryOptions(host, app, element) {
   rules.className = "hint rat-scene-effective-rules";
   rules.setAttribute("aria-live", "polite");
   const updateRules = () => {
-    const mode = input.value;
-    if (mode !== "world") {
-      rules.textContent = localize(host, `RAT.Scene.Effective.${mode}`);
-      return;
-    }
-    const policy = memoryPolicy(host.game.settings);
-    rules.textContent = format(host, "RAT.Scene.Effective.world", {
-      rounds: policy.combatRounds,
-      minutes: policy.seconds / 60,
-      hidden: localize(
-        host,
-        host.game.settings.get(MODULE_ID, "rememberHidden")
-          ? "RAT.Scene.Effective.KeepHidden"
-          : "RAT.Scene.Effective.RemoveHidden"
-      ),
-      activity: localize(
-        host,
-        host.game.settings.get(MODULE_ID, "combatOnly")
-          ? "RAT.Scene.Effective.CombatOnly"
-          : "RAT.Scene.Effective.AnyTime"
-      )
-    });
+    const mode =
+      input.value === "long" || input.value === "disabled"
+        ? input.value
+        : "world";
+    rules.textContent = memoryRulesText(host, memoryRules(host, mode)).detail;
   };
   input.addEventListener("change", updateRules);
   updateRules();

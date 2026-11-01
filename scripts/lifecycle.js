@@ -71,8 +71,15 @@ export function installModule(host) {
       refreshLanguage();
       return;
     }
-    if (["memoryRounds", "memoryMinutes"].includes(key)) {
+    if (
+      ["memoryRounds", "memoryMinutes", "daggerheartCombatMemory"].includes(key)
+    ) {
       tracker.updatePolicy();
+      if (key === "daggerheartCombatMemory") {
+        tracker.renderer.refreshCaptions();
+        settingsPreview.refreshCaptionPolicy();
+        tracker.notifyMemory(true);
+      }
       return;
     }
     if (key === "combatOnly") {
@@ -100,7 +107,8 @@ export function installModule(host) {
         refreshAppearance,
         host.foundry?.data?.fields?.ColorField,
         host.foundry?.data?.fields?.FilePathField,
-        host.foundry?.data?.fields?.NumberField
+        host.foundry?.data?.fields?.NumberField,
+        host.game.system?.id
       );
       host.game.keybindings.register(MODULE_ID, "clearMemory", {
         name: "RAT.Clear.Name",

@@ -6,7 +6,9 @@ const categories = {
   ru: ["Новое", "Изменения и улучшения", "Исправления"]
 };
 
-/** Validate all historical and pending entries, returning their bilingual shape. */
+/** Omit empty categories and versions; keep populated categories in canonical order.
+ * Validate all historical and pending entries, returning their bilingual shape.
+ */
 export function changelogShape(markdown, language) {
   const sections = [...markdown.matchAll(/^## (.+)\r?$/gm)];
   assert.ok(sections.length, "Changelog must contain version sections.");
@@ -45,19 +47,19 @@ export function changelogShape(markdown, language) {
     const counts = [0, 0, 0];
     for (const line of lines) {
       if (line.startsWith("### ")) {
-        category++;
-        assert.equal(line, `### ${categories[language][category]}`, context);
+        if (category >= 0)
+          assert.ok(counts[category], `${context}: omit empty categories.`);
+        const next = categories[language].indexOf(line.slice(4));
+        assert.ok(next > category, `${context}: invalid category or order.`);
+        category = next;
       } else {
         assert.ok(category >= 0, `${context}: entry before category.`);
         assert.match(line, /^- \*\*[^*\r\n]+:\*\* \S.+$/, context);
         counts[category]++;
       }
     }
-    assert.equal(category, 2, `${context}: expected all three categories.`);
-    assert.ok(
-      version === "Unreleased" || counts.some(Boolean),
-      `${context}: empty version.`
-    );
+    assert.ok(category >= 0, `${context}: omit empty versions.`);
+    assert.ok(counts[category], `${context}: omit empty categories.`);
     shape[version] = counts;
   }
   return shape;

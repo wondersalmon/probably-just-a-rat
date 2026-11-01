@@ -36,6 +36,7 @@ export interface FoundryHost {
   CONFIG: any;
   foundry?: any;
   document: Document;
+  navigator?: Pick<Navigator, "clipboard">;
   localStorage?: Storage;
   addEventListener?: typeof window.addEventListener;
   removeEventListener?: typeof window.removeEventListener;
@@ -43,6 +44,8 @@ export interface FoundryHost {
   clearInterval: typeof clearInterval;
   Hooks: HookService;
   game: {
+    system?: { id: string; version?: string };
+    version?: string;
     world?: { id: string };
     release: { generation: number };
     user: any;
@@ -56,6 +59,7 @@ export interface FoundryHost {
     modules: Map<
       string,
       {
+        version?: string;
         api?: Readonly<{
           stage: string;
           getDiagnostics?: () => unknown;
@@ -85,6 +89,9 @@ export interface FoundryHost {
   ui: {
     controls?: any;
     combat?: any;
-    notifications: { warn(message: string): void };
+    notifications: {
+      warn(message: string): void;
+      info?(message: string): void;
+    };
   };
 }

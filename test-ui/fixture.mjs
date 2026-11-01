@@ -174,6 +174,9 @@ const host = {
     }
   },
   game: {
+    system: {
+      id: new URL(location.href).searchParams.get("system") ?? "dnd5e"
+    },
     user: {
       id: "player",
       role: 1,
@@ -221,12 +224,26 @@ const host = {
 };
 const store = new MemoryStore();
 const tracker = new ObservationTracker(host, store);
-registerSettings(host.game.settings, key => {
-  if (["labels", "showNames", "showRounds"].includes(key))
-    tracker.renderer.refreshCaptions();
-  else tracker.renderer.rebuild();
-  tracker.schedule();
-});
+registerSettings(
+  host.game.settings,
+  key => {
+    if (
+      ["memoryRounds", "memoryMinutes", "daggerheartCombatMemory"].includes(key)
+    ) {
+      tracker.updatePolicy();
+      tracker.renderer.refreshCaptions();
+      return;
+    }
+    if (["labels", "showNames", "showRounds"].includes(key))
+      tracker.renderer.refreshCaptions();
+    else tracker.renderer.rebuild();
+    tracker.schedule();
+  },
+  undefined,
+  undefined,
+  undefined,
+  host.game.system.id
+);
 const pings = new CombatMemoryPing(host, tracker);
 const preview = new SettingsPreview(host, values => {
   if (

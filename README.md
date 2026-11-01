@@ -8,9 +8,15 @@ Ghosts stay where enemies were last seen and disappear on rediscovery. Each play
 
 The rat button opens ping, camera and forget controls.
 
+The panel explains when memory is disabled, requires combat or has no available vision source. Its rule summary follows the saved world and scene settings; hover over it for details. GMs can **Copy support report** with versions, rules and observation status, without game documents or remembered positions. If clipboard access fails, the panel shows text for manual copying. Nothing is sent automatically.
+
 The GM chooses **Ghost**, **Boot prints**, **Position pin** or **Custom image** for all players in the module settings. **Rotate with movement** optionally turns any marker toward the token's last observed movement direction; the angle freezes after loss of sight. Off by default.
 
 By default, hiding a token with **Hidden** removes its saved position. The GM can enable keeping known positions instead. Unseen tokens never create markers. In combat, captions keep the last-position label alongside the round counter.
+
+Memory follows visual detection, including darkness, darkvision and **See Invisibility**. See Invisibility also requires ordinary sight or illumination at the detected point for the same observer. Hearing, tremorsense and other nonvisual senses do not update memory. In PF2e and Starfinder 2e, enable **Rules-Based Vision** to use the system's automated senses and conditions; the PF2e **Hidden** condition is separate from the GM's **Hidden** button.
+
+In the official **Daggerheart** system, **Memory during encounters** offers **After N spotlight steps** (preserves the existing limit, default 2) or **Until encounter end** (recommended). Assigning, switching or clearing spotlight counts as a step. Until encounter end hides the step limit and counter captions; rediscovery and manual removal still clear markers, and the minute limit applies outside encounters. Scene **Long memory** takes priority. Daggerheart's **Hidden** condition does not automatically hide the token on the canvas: use the GM's **Hidden** button with **Keep marker** to retain an already known position.
 
 The GM can open the current scene's **Visibility** tab using the button in **Memory rules**.
 

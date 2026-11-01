@@ -5,6 +5,7 @@ import { LocalMemoryCache, isSavedImage } from "./local-memory-cache.js";
 import { localize } from "./localization.js";
 import { MODULE_ID } from "./constants.js";
 import { memoryPolicy, sceneRetainsMemory } from "./settings.js";
+import { memoryRules } from "./memory-status.js";
 
 export class ObservationTracker {
   /** @param {import("../types/foundry.js").FoundryHost} host @param {import("./core/memory-store.js").MemoryStore} store */
@@ -104,7 +105,11 @@ export class ObservationTracker {
       this.retainedContext = sceneRetainsMemory(this.host.canvas.scene);
       this.store.setContext(context);
       this.store.setPolicy(
-        memoryPolicy(this.host.game.settings, this.host.canvas.scene)
+        memoryPolicy(
+          this.host.game.settings,
+          this.host.canvas.scene,
+          this.host.game.system?.id
+        )
       );
       this.store.setCombat(this.adapter.combat());
       const saved = !this.restoreAttempted
@@ -195,7 +200,10 @@ export class ObservationTracker {
    * @param {any} [token]
    */
   schedule(token) {
-    if (this.failed || !this.host.canvas?.ready) return;
+    if (this.failed || !this.host.canvas?.ready) {
+      this.notifyMemory();
+      return;
+    }
     if (token) {
       this.pending.add(token);
       if (token.animationContexts?.size) this.animating.add(token);
@@ -228,7 +236,11 @@ export class ObservationTracker {
       this.cache.removeRetained(this.context);
     this.retainedContext = sceneRetainsMemory(this.host.canvas.scene);
     this.store.setPolicy(
-      memoryPolicy(this.host.game.settings, this.host.canvas.scene)
+      memoryPolicy(
+        this.host.game.settings,
+        this.host.canvas.scene,
+        this.host.game.system?.id
+      )
     );
     this.store.setCombat(this.adapter.combat());
     if (this.context && this.host.canvas?.ready)
@@ -284,7 +296,8 @@ export class ObservationTracker {
 
   /** @param {boolean} [force] */
   notifyMemory(force = false) {
-    const signature = JSON.stringify(
+    const signature = JSON.stringify([
+      this.status(),
       this.store
         .remembered()
         .map(record => [
@@ -292,7 +305,7 @@ export class ObservationTracker {
           record.snapshot.observedAt,
           this.renderer.label(record)
         ])
-    );
+    ]);
     if (force || signature !== this.memorySignature) {
       this.memorySignature = signature;
       this.checkpoint(true);
@@ -314,6 +327,23 @@ export class ObservationTracker {
     this.cache.clear();
     this.cache.clearRetained();
     // Do not immediately rescan: an explicit forget lasts until another native observation event.
+  }
+
+  /** Safe metadata only; observation and this status share the native context gate. */
+  status() {
+    let state = "suspended";
+    if (!this.failed) {
+      try {
+        state = this.adapter.inspectContext().reason;
+      } catch {
+        state = "unsupported";
+      }
+    }
+    return Object.freeze({
+      state,
+      canReport: Boolean(this.host.game.user?.isGM),
+      rules: memoryRules(this.host)
+    });
   }
 
   /** @param {boolean} [force] */

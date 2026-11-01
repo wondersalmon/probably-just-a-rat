@@ -1,6 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { localize, format } from "../localization.js";
 import { openCurrentSceneMemorySettings } from "./scene-config.js";
+import { memoryRulesText } from "../memory-status.js";
 
 /** A native standalone view of the same permission-checked API used by Adventurer HUD. */
 export class RatControlPanel {
@@ -23,6 +24,9 @@ export class RatControlPanel {
   disposed = false;
   clearing = false;
   toggling = false;
+  copying = false;
+  manualReport = false;
+  session = 0;
 
   /** @param {any} controls */
   addTool(controls) {
@@ -84,7 +88,7 @@ export class RatControlPanel {
         if (list) list.scrollTop = scroll;
         if (action) {
           const next = Array.from(
-            content.querySelectorAll("button[data-rat-action]")
+            content.querySelectorAll("[data-rat-action]")
           ).find(
             button =>
               button.getAttribute("data-rat-action") === action &&
@@ -151,6 +155,7 @@ export class RatControlPanel {
   build() {
     const doc = this.host.document;
     const records = this.api.list();
+    const status = this.api.status();
     const root = doc.createElement("section");
     root.className = "rat-controls-body";
     const heading = root.appendChild(doc.createElement("div"));
@@ -179,6 +184,19 @@ export class RatControlPanel {
       heading.append(visibility);
     }
     heading.append(settings);
+    if (this.host.game.user.isGM) {
+      const report = this.button("RAT.Support.Copy", "report", "fa-file-lines");
+      report.disabled = this.copying;
+      heading.append(report);
+    } else this.manualReport = false;
+    if (status) {
+      const text = memoryRulesText(this.host, status.rules);
+      const summary = root.appendChild(doc.createElement("p"));
+      summary.className = "rat-controls-rules";
+      summary.textContent = text.summary;
+      summary.title = text.detail;
+      summary.setAttribute("aria-label", text.detail);
+    }
     const list = root.appendChild(doc.createElement("div"));
     list.className = "rat-controls-list";
     for (const record of records) {
@@ -207,11 +225,30 @@ export class RatControlPanel {
         actions.append(button);
       }
     }
-    if (!records.length) {
+    if (!records.length || status?.state !== "active") {
       const empty = list.appendChild(doc.createElement("p"));
       empty.className = "rat-controls-empty";
       empty.setAttribute("role", "status");
-      empty.textContent = localize(this.host, "RAT.Controls.Empty");
+      empty.textContent = localize(
+        this.host,
+        status && status.state !== "active"
+          ? `RAT.Status.${status.state}`
+          : "RAT.Controls.Empty"
+      );
+    }
+    if (this.manualReport && this.host.game.user.isGM) {
+      const label = root.appendChild(doc.createElement("label"));
+      label.textContent = localize(this.host, "RAT.Support.Manual");
+      const text = label.appendChild(doc.createElement("textarea"));
+      text.className = "rat-support-text";
+      text.dataset.ratAction = "report-text";
+      text.readOnly = true;
+      text.rows = 8;
+      text.value = this.api.supportReport() ?? "";
+      text.setAttribute(
+        "aria-label",
+        localize(this.host, "RAT.Support.Manual")
+      );
     }
     root.addEventListener("click", event => {
       void this.onAction(event);
@@ -233,7 +270,9 @@ export class RatControlPanel {
       .closest("[data-memory-id]")
       ?.getAttribute("data-memory-id");
     try {
-      if (action === "scene-visibility") {
+      if (action === "report") {
+        await this.copyReport();
+      } else if (action === "scene-visibility") {
         button.disabled = true;
         try {
           if (!(await openCurrentSceneMemorySettings(this.host)))
@@ -283,6 +322,42 @@ export class RatControlPanel {
       localize(this.host, "RAT.Controls.ActionFailed")
     );
   }
+  /** Clipboard failure exposes a local selectable report; no network or diagnostics switch. */
+  async copyReport() {
+    if (
+      !this.host.game.user?.isGM ||
+      !this.open ||
+      this.disposed ||
+      this.copying
+    )
+      return false;
+    const text = this.api.supportReport();
+    if (text === null) return false;
+    const session = this.session;
+    const current = () =>
+      session === this.session &&
+      this.host.game.user?.isGM &&
+      this.open &&
+      !this.disposed;
+    this.copying = true;
+    this.manualReport = false;
+    try {
+      const clipboard = this.host.navigator?.clipboard;
+      if (!clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await clipboard.writeText(text);
+      if (current())
+        this.host.ui.notifications.info?.(
+          localize(this.host, "RAT.Support.Copied")
+        );
+      return true;
+    } catch {
+      this.manualReport = Boolean(current());
+      return false;
+    } finally {
+      this.copying = false;
+      this.refresh();
+    }
+  }
   close() {
     this.closed();
     void Promise.resolve(this.window?.close()).catch(() => {
@@ -290,7 +365,9 @@ export class RatControlPanel {
     });
   }
   closed() {
+    this.session++;
     this.open = false;
+    this.manualReport = false;
     this.unsubscribe?.();
     this.unsubscribe = null;
   }

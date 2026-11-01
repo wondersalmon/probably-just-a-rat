@@ -3,6 +3,7 @@ import { resolveAppearance, resolveCaptionStyle } from "../appearance.js";
 import { isMemoryDurationValid } from "../settings.js";
 import { localize as translate, format } from "../localization.js";
 import { openCurrentSceneMemorySettings } from "./scene-config.js";
+import { encounterMemory, memoryTextKey } from "../system-profile.js";
 
 let settingsMenuSequence = 0;
 
@@ -85,6 +86,7 @@ export function organizeSettings(host, root, activeSection = "marker") {
               title: "Memory",
               keys: [
                 "combatOnly",
+                "daggerheartCombatMemory",
                 "memoryRounds",
                 "memoryMinutes",
                 "rememberHidden"
@@ -398,6 +400,10 @@ export function translateSettings(host, root) {
     sharePings: {
       false: "RAT.PingAudience.Local",
       true: "RAT.PingAudience.Shared"
+    },
+    daggerheartCombatMemory: {
+      steps: "RAT.Daggerheart.Mode.Steps",
+      encounter: "RAT.Daggerheart.Mode.Encounter"
     }
   };
   for (const field of root.querySelectorAll?.('[name^="' + MODULE_ID + '."]') ??
@@ -407,8 +413,16 @@ export function translateSettings(host, root) {
     const group = field.closest(".form-group");
     const label = group?.querySelector(":scope > label");
     const hint = group?.querySelector(":scope > .hint");
-    if (label) label.textContent = translate(host, `RAT.Settings.${key}.Name`);
-    if (hint) hint.textContent = translate(host, `RAT.Settings.${key}.Hint`);
+    if (label)
+      label.textContent = translate(
+        host,
+        memoryTextKey(host.game.system?.id, `RAT.Settings.${key}.Name`)
+      );
+    if (hint)
+      hint.textContent = translate(
+        host,
+        memoryTextKey(host.game.system?.id, `RAT.Settings.${key}.Hint`)
+      );
     for (const option of field.querySelectorAll("option")) {
       const translation = choices[key]?.[option.value];
       if (translation) option.textContent = translate(host, translation);
@@ -469,14 +483,49 @@ export function validateMemoryInputs(host, root) {
       root.querySelector(`input[name="${MODULE_ID}.${key}"]`)
     );
     if (!input?.setCustomValidity) continue;
+    if (input.disabled) {
+      input.setCustomValidity("");
+      continue;
+    }
     input.required = true;
     input.min = key === "memoryRounds" ? "1" : "0";
     input.step = key === "memoryRounds" ? "1" : "any";
     input.setCustomValidity(
       isMemoryDurationValid(key, input.value === "" ? NaN : Number(input.value))
         ? ""
-        : translate(host, `RAT.Settings.${key}.Validation`)
+        : translate(
+            host,
+            memoryTextKey(
+              host.game.system?.id,
+              `RAT.Settings.${key}.Validation`
+            )
+          )
     );
+  }
+}
+
+/** Hide inactive counter controls without discarding their saved values.
+ * @param {import("../../types/foundry.js").FoundryHost} host @param {HTMLElement} root
+ * @param {Record<string, any>} [draft]
+ */
+export function updateCombatMemoryControls(host, root, draft = {}) {
+  const encounter = encounterMemory(
+    host.game.settings,
+    host.game.system?.id,
+    draft.daggerheartCombatMemory
+  );
+  for (const key of ["memoryRounds", "showRounds"]) {
+    const field = /** @type {HTMLInputElement | null} */ (
+      root.querySelector(`[name="${MODULE_ID}.${key}"]`)
+    );
+    const group = /** @type {HTMLElement | undefined | null} */ (
+      field?.closest?.(".form-group")
+    );
+    if (group) {
+      group.hidden = encounter;
+      group.style.display = encounter ? "none" : "";
+    }
+    if (field) field.disabled = encounter;
   }
 }
 
@@ -558,8 +607,20 @@ export function updateSettingsSample(host, root, draft) {
   if (get("showNames") !== false)
     parts.push(translate(host, "RAT.Settings.Preview.Target"));
   parts.push(translate(host, "RAT.LastPosition"));
-  if (get("showRounds") !== false)
-    parts.push(translate(host, "RAT.Settings.Preview.Rounds"));
+  if (
+    get("showRounds") !== false &&
+    !encounterMemory(
+      host.game.settings,
+      host.game.system?.id,
+      draft.daggerheartCombatMemory
+    )
+  )
+    parts.push(
+      translate(
+        host,
+        memoryTextKey(host.game.system?.id, "RAT.Settings.Preview.Rounds")
+      )
+    );
   caption.textContent = parts.join(" · ");
   caption.hidden = !appearance.labels || !parts.length;
   caption.classList.toggle(

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0
+
+### New
+
+- **Daggerheart:** Added a GM choice between the existing spotlight-step limit and memory until encounter end. Settings, previews, scene summaries and marker captions use spotlight terminology; saved limits and scene Long memory remain supported.
+- **Panel status and rules:** Position memory explains scene, combat and vision restrictions and shows the saved effective policy, including Daggerheart and Long memory. Status and rule changes update an open panel even when the list is empty.
+- **Support report:** GMs can copy versions, rules and observation status without game documents or remembered positions, with manual copying when clipboard access fails.
+
+### Fixes
+
+- **See Invisibility:** Visually rediscovered invisible enemies now update memory and remove old markers, including in PF2e and Starfinder 2e. Detection and ordinary sight or illumination must overlap at the same point for the same observer; nonvisual senses still cannot update memory.
+
+Documentation: [Module documentation](https://github.com/wondersalmon/probably-just-a-rat/blob/main/README.md) · [Changelog in Russian](https://github.com/wondersalmon/probably-just-a-rat/blob/HEAD/CHANGELOG.ru.md#030).
+
 ## 0.2.1
 
 ### New
@@ -39,8 +53,6 @@ Documentation: [Module documentation](https://github.com/wondersalmon/probably-j
 
 - **Development dependencies:** Updated dependencies, kept Pixi 7 and disabled its automatic major updates.
 
-### Fixes
-
 Documentation: [Module documentation](https://github.com/wondersalmon/probably-just-a-rat/blob/main/README.md) · [Changelog in Russian](https://github.com/wondersalmon/probably-just-a-rat/blob/HEAD/CHANGELOG.ru.md#011).
 
 ## 0.1.0
@@ -53,9 +65,5 @@ Documentation: [Module documentation](https://github.com/wondersalmon/probably-j
 - **Appearance and GM rules:** Personal opacity, grayscale, outline and caption settings; GM rules for names, round counters, ping audience and combat-only mode.
 - **Token overrides and localization:** Per-token overrides, a clear-memory keybinding and English/Russian localization.
 - **Memory lifetime:** GM-configurable expiry, defaulting to 2 combat rounds and 1 minute outside combat.
-
-### Changes and improvements
-
-### Fixes
 
 Documentation: [Module documentation](https://github.com/wondersalmon/probably-just-a-rat/blob/main/README.md) · [Changelog in Russian](https://github.com/wondersalmon/probably-just-a-rat/blob/HEAD/CHANGELOG.ru.md#010).
