@@ -76,12 +76,16 @@ test("release workflow invokes the tested publisher with scoped secret and same-
   const source = await readFile(".github/workflows/release.yml", "utf8");
   assert.match(
     source,
-    /run: node \.release-tools\/tools\/publish-foundry\.mjs/
+    /run: node dev\/release-tools\/bin\/publish-foundry\.mjs/
   );
-  assert.match(source, /ref: \$\{\{ github\.workflow_sha \}\}/);
+  const pkg = JSON.parse(await readFile("package.json", "utf8"));
+  assert.match(pkg.foundryRelease.revision, /^[a-f0-9]{40}$/);
+  assert.ok(source.includes("ref: " + pkg.foundryRelease.revision));
+  assert.match(source, /repository: wondersalmon\/foundry-release-tools/);
+  assert.match(source, /ssh-key: \$\{\{ secrets\.RELEASE_TOOLS_SSH_KEY \}\}/);
   assert.match(
     source,
-    /RAT_RELEASE_TOKEN: \$\{\{ secrets\.RAT_RELEASE_TOKEN \}\}/
+    /FOUNDRY_RELEASE_TOKEN: \$\{\{ secrets\.RAT_RELEASE_TOKEN \}\}/
   );
   assert.match(
     source,
@@ -261,8 +265,10 @@ test("prereleases cannot reach Foundry publication, including a manual invocatio
 
 test("release workflow keeps prereleases away from stable latest and Foundry, including dispatch", async () => {
   const source = await readFile(".github/workflows/release.yml", "utf8");
-  assert.match(source, /CHANNEL_ARGS=\(--prerelease --latest=false\)/);
-  assert.match(source, /--verify-tag/);
+
+  assert.match(source, /run: npm run release:github/);
+
+  assert.match(source, /run: npm run release:verify -- --release/);
   const foundryJob = source.slice(source.indexOf("  publish-foundry:"));
   assert.match(
     foundryJob,
@@ -273,7 +279,7 @@ test("release workflow keeps prereleases away from stable latest and Foundry, in
   assert.match(foundryJob, /needs\.release\.result == 'success'/);
   assert.match(
     source.slice(0, source.indexOf("  publish-foundry:")),
-    /if: github\.event_name == 'push'/
+    /if: github\.event_name == 'push' \|\| inputs\.stage == 'release'/
   );
 });
 

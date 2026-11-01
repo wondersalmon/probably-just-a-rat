@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main, "codex/**", "feature/**"]
+    branches: [main, "codex/**", "feature/**", "beta/**", "release/**"]
 
 permissions:
   contents: read
@@ -26,7 +26,29 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:ui
       - run: npm run benchmark
-      - run: npm run build
+      - name: Check out pinned private release toolkit for trusted builds
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/checkout@v7
+        with:
+          repository: wondersalmon/foundry-release-tools
+          ref: 9ad17b969cb2c6ce51a92b036f36b3be84fa8dc5
+          path: dev/release-tools
+          ssh-key: ${{ secrets.RELEASE_TOOLS_SSH_KEY }}
+          persist-credentials: false
+
+      - name: Install pinned toolkit dependencies
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        run: npm ci --prefix dev/release-tools --omit=dev --ignore-scripts
+
+      - name: Build and verify with shared toolkit
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          npm run release:build
+          npm run release:verify
+
+      - name: Build fork package without private credentials
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        run: npm run build
       - uses: actions/upload-artifact@v7
         if: always()
         with:

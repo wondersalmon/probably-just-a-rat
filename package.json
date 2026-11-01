@@ -23,7 +23,12 @@
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run validate",
     "check:ci": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage && npm run validate",
     "benchmark": "node tools/benchmark.mjs",
-    "build": "node tools/build.mjs"
+    "build": "node tools/build.mjs",
+    "release:verify": "node dev/release-tools/bin/package.mjs --verify",
+    "release:github": "node dev/release-tools/bin/publish-github.mjs",
+    "test:local": "node --test dev/release-tools/tests/release-script.test.mjs",
+    "release:setup": "node tools/files.mjs --setup-release-tools",
+    "release:build": "node dev/release-tools/bin/package.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
@@ -33,5 +38,23 @@
     "globals": "17.13.0",
     "prettier": "3.9.10",
     "typescript": "7.0.2"
+  },
+  "foundryRelease": {
+    "toolkitRepository": "wondersalmon/foundry-release-tools",
+    "revision": "9ad17b969cb2c6ce51a92b036f36b3be84fa8dc5",
+    "sourceReleaseUrls": false,
+    "defaultReleaseBuild": false,
+    "benchmark": {
+      "executable": "npm.cmd",
+      "arguments": [
+        "run",
+        "benchmark"
+      ]
+    },
+    "notesHeading": true,
+    "packageFiles": {
+      "module": "tools/validate.mjs",
+      "export": "validate"
+    }
   }
 }

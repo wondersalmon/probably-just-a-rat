@@ -1,6 +1,21 @@
+import { pathToFileURL } from "node:url";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+const config = {
+  id: "probably-just-a-rat",
+  title: "Probably Just a Rat",
+  repository: "https://github.com/wondersalmon/probably-just-a-rat",
+  archive: "probably-just-a-rat.zip"
+};
+export function parseVersion(version) {
+  if (
+    !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-beta\.[1-9]\d*)?$/.test(
+      version ?? ""
+    )
+  )
+    throw new Error("Use a stable version or a beta.N version.");
+  return { version, tag: `v${version}`, beta: version.includes("-") };
+}
 
 const retryStatuses = new Set([429, 500, 502, 503, 504]);
 
@@ -69,8 +84,11 @@ export async function publishFoundryRelease({
     throw new Error(
       "Prereleases are GitHub-only and must not be published to Foundry Packages."
     );
+  parseVersion(tag.slice(1));
   if (!token?.startsWith("fvttp_"))
-    throw new Error("RAT_RELEASE_TOKEN GitHub Secret is missing or invalid.");
+    throw new Error(
+      "FOUNDRY_RELEASE_TOKEN GitHub Secret is missing or invalid."
+    );
   const version = tag.slice(1);
   const manifest = JSON.parse(
     await readFile(path.join(root, "module.json"), "utf8")
@@ -97,14 +115,11 @@ export async function publishFoundryRelease({
     compatibility[key] = value;
   }
   const repository = manifest.url.replace(/\/$/, "");
-  if (
-    repository !== "https://github.com/wondersalmon/probably-just-a-rat" ||
-    manifest.id !== "probably-just-a-rat"
-  )
+  if (repository !== config.repository || manifest.id !== config.id)
     throw new Error("Unexpected package ID or repository URL in module.json.");
   const release = `${repository}/releases/download/${tag}`;
   const manifestUrl = `${release}/module.json`;
-  const downloadUrl = `${release}/probably-just-a-rat.zip`;
+  const downloadUrl = `${release}/${config.archive}`;
   const context = { fetchImpl, sleep, now };
   const remote = await request(manifestUrl, { method: "GET" }, context, true);
   if (!remote.ok)
@@ -115,8 +130,8 @@ export async function publishFoundryRelease({
     remote.body?.id !== manifest.id ||
     remote.body?.version !== version ||
     remote.body?.download !== downloadUrl ||
-    Object.entries(compatibility).some(
-      ([key, value]) => remote.body?.compatibility?.[key] !== value
+    ["minimum", "verified", "maximum"].some(
+      key => remote.body?.compatibility?.[key] !== compatibility[key]
     )
   )
     throw new Error("Published GitHub manifest does not match this release.");
@@ -154,7 +169,7 @@ export async function publishFoundryRelease({
       error => error.code === "unique_together"
     )
   ) {
-    log(`Foundry already has Probably Just a Rat ${version}.`);
+    log(`Foundry already has ${config.title} ${version}.`);
   } else if (!response.ok || response.body?.status !== "success") {
     const detail = JSON.stringify(
       response.body?.errors ?? response.body ?? "Non-JSON response"
@@ -165,7 +180,7 @@ export async function publishFoundryRelease({
       `Foundry publication failed (${response.status}): ${detail}`
     );
   } else {
-    log(`Published Probably Just a Rat ${version} to Foundry.`);
+    log(`Published ${config.title} ${version} to Foundry.`);
   }
 }
 
@@ -175,7 +190,7 @@ if (
 ) {
   publishFoundryRelease({
     tag: process.env.RELEASE_TAG,
-    token: process.env.RAT_RELEASE_TOKEN
+    token: process.env.FOUNDRY_RELEASE_TOKEN ?? process.env.RAT_RELEASE_TOKEN
   }).catch(error => {
     console.error(error.message);
     process.exitCode = 1;
