@@ -459,27 +459,40 @@ test("GM caption off hides the player style control while world contrast seeds t
   );
 });
 
-test("module language changes after Save while native Foundry language stays unchanged", async ({
-  page
-}) => {
-  await settingsForm(page, false);
-  const root = page.locator("#review-settings");
-  await root.locator('[name$=".language"]').selectOption("en");
-  await expect(root.getByText("Мои настройки", { exact: true })).toBeVisible();
-  await root.getByRole("button", { name: "Save", exact: true }).click();
-  await page.waitForFunction(() => window.__reviewSaved);
-  await expect(root.getByText("My settings", { exact: true })).toBeVisible();
-  await expect(root.getByText("Preview", { exact: true })).toBeVisible();
-  await expect(root.locator(".rat-personal-caption-style option")).toHaveText([
-    "Standard",
-    "High contrast"
-  ]);
-  expect(
-    await page.evaluate(() =>
-      __ratFixture.tracker.host.game.i18n.localize("RAT.Settings.Preview.Title")
-    )
-  ).toBe("Предпросмотр");
-});
+for (const [locale, personal, preview, captions] of [
+  ["en", "My settings", "Preview", ["Standard", "High contrast"]],
+  ["pt-BR", "Minhas configurações", "Prévia", ["Padrão", "Alto contraste"]],
+  [
+    "pt-PT",
+    "As minhas definições",
+    "Pré-visualização",
+    ["Normal", "Alto contraste"]
+  ]
+])
+  test(`module language changes after Save while native Foundry stays unchanged (${locale})`, async ({
+    page
+  }) => {
+    await settingsForm(page, false);
+    const root = page.locator("#review-settings");
+    await root.locator('[name$=".language"]').selectOption(locale);
+    await expect(
+      root.getByText("Мои настройки", { exact: true })
+    ).toBeVisible();
+    await root.getByRole("button", { name: "Save", exact: true }).click();
+    await page.waitForFunction(() => window.__reviewSaved);
+    await expect(root.getByText(personal, { exact: true })).toBeVisible();
+    await expect(root.getByText(preview, { exact: true })).toBeVisible();
+    await expect(root.locator(".rat-personal-caption-style option")).toHaveText(
+      captions
+    );
+    expect(
+      await page.evaluate(() =>
+        __ratFixture.tracker.host.game.i18n.localize(
+          "RAT.Settings.Preview.Title"
+        )
+      )
+    ).toBe("Предпросмотр");
+  });
 
 test("GM eye opens scene visibility settings and player panel omits it", async ({
   page

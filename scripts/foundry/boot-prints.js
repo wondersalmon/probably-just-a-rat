@@ -20,7 +20,7 @@ export function createBootPrints(host, snapshot, appearance) {
   prints.name = "rat-boot-prints";
   prints.eventMode = "none";
   prints.interactiveChildren = false;
-  prints.position.set(snapshot.width / 2, snapshot.height / 2);
+  prints.position.set(snapshot.centerOffsetX, snapshot.centerOffsetY);
   prints.scale.set(Math.min(snapshot.width, snapshot.height) / 100);
   prints.angle = appearance.customMarkerRotate
     ? (snapshot.movementAngle ?? 0)

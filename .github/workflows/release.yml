@@ -71,9 +71,6 @@ jobs:
       - name: Check browser layout
         run: npm run test:ui
 
-      - name: Benchmark memory store
-        run: npm run benchmark
-
       - name: Upload release diagnostics
         if: always()
         uses: actions/upload-artifact@v7
@@ -81,7 +78,6 @@ jobs:
           name: release-diagnostics-${{ inputs.tag || github.ref_name }}
           path: |
             dev/coverage
-            dev/benchmarks
             dev/playwright-report
             dev/test-results
           if-no-files-found: ignore

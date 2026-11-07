@@ -596,16 +596,27 @@ test("Hidden memory never reveals unknown tokens and turning the GM rule off can
 
 test("blinded observers lose visual contact even if the target's rendered visibility is stale", () => {
   const f = fixture();
+  f.source.data = { visionMode: "basic" };
   f.update();
   const snapshot = f.store.get("enemy").snapshot;
+  const context = f.tracker.context;
   f.source.isBlinded = true;
+  f.source.visionMode = { id: "blindness" };
   f.update();
+  assert.equal(f.tracker.context, context);
   assert.equal(f.store.get("enemy").state, "remembered");
   assert.equal(f.store.get("enemy").snapshot, snapshot);
   f.source.isBlinded = false;
+  f.source.visionMode = { id: "basic" };
   f.update();
   assert.equal(f.store.get("enemy").state, "observed");
   assert.equal(f.tracker.renderer.markers.size, 0);
+  f.source.data.visionMode = "darkvision";
+  f.source.visionMode = { id: "darkvision" };
+  f.enemy.visible = false;
+  f.update();
+  assert.notEqual(f.tracker.context, context);
+  assert.equal(f.store.size, 0);
   f.tracker.suspend();
 });
 

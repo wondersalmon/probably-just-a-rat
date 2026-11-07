@@ -191,6 +191,29 @@ test("zero TTL disables automatic expiry", () => {
   assert.equal(store.remembered().length, 1);
 });
 
+test("batched losses and single-record reads avoid global expiry sweeps", () => {
+  const { store, advance } = fixture({ seconds: 1 });
+  const expire = store.expire.bind(store);
+  let sweeps = 0;
+  store.expire = () => {
+    sweeps++;
+    expire();
+  };
+  for (let index = 0; index < 100; index++)
+    store.observe(String(index), visual);
+  for (let index = 0; index < 100; index++) {
+    store.setCombat(null);
+    store.loseSight(String(index));
+  }
+  assert.equal(sweeps, 0);
+  assert.equal(store.remembered().length, 100);
+  assert.equal(sweeps, 1);
+  advance(1000);
+  assert.equal(store.get("0"), undefined);
+  assert.equal(sweeps, 1);
+  assert.equal(store.remembered().length, 0);
+});
+
 test("combat start and replacement discard previous histories", () => {
   const { store } = fixture();
   store.observe("enemy", visual);

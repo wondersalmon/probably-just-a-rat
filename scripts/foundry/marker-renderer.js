@@ -226,8 +226,6 @@ export class MarkerRenderer {
     container.interactiveChildren = false;
     container.position.set(s.x, s.y);
     const appearance = this.appearance();
-    const centerX = s.width / 2;
-    const centerY = s.height / 2;
     /** @type {any[]} */
     const filters = [];
     const custom = appearance.markerStyle === "custom";
@@ -286,7 +284,7 @@ export class MarkerRenderer {
         .beginFill(0xd0d0d0, appearance.opacity)
         .drawEllipse(0, 0, s.width * 0.3, s.height * 0.4)
         .endFill();
-      silhouette.position.set(centerX, centerY);
+      silhouette.position.set(s.centerOffsetX, s.centerOffsetY);
       silhouette.angle = appearance.customMarkerRotate
         ? (s.movementAngle ?? 0)
         : 0;
@@ -346,7 +344,7 @@ export class MarkerRenderer {
       text.position.set(0, 3);
       caption.addChild(background);
       caption.addChild(text);
-      caption.position.set(snapshot.width / 2, snapshot.height + 6);
+      caption.position.set(snapshot.centerOffsetX, snapshot.height + 6);
     }
     return caption;
   }
@@ -373,7 +371,7 @@ export class MarkerRenderer {
     sprite.height = s.imageHeight ?? s.height;
     sprite.scale.x *= s.scaleX;
     sprite.scale.y *= s.scaleY;
-    sprite.position.set(s.width / 2, s.height / 2);
+    sprite.position.set(s.centerOffsetX, s.centerOffsetY);
     sprite.angle = s.rotation;
     return sprite;
   }
@@ -496,7 +494,7 @@ export class MarkerRenderer {
       this.removeMarker(record.tokenId);
       this.create(record);
     }
-    this.updateMask();
+    if (this.markers.size) this.updateMask();
   }
 
   updateMask() {
@@ -511,17 +509,46 @@ export class MarkerRenderer {
       this.maskRect.height === rect.height
     )
       return;
-    this.mask
-      .clear()
-      .beginFill(0xffffff)
-      .drawRect(rect.x, rect.y, rect.width, rect.height);
-    // The overlay is above fog but below HUD. Cut out actual visible token meshes so
-    // remembered graphics never paint over a real token; no hidden geometry is read.
+    this.mask.clear().beginFill(0xffffff);
+    const right = rect.x + rect.width;
+    const bottom = rect.y + rect.height;
+    // Fill the gaps between the union of visible bounds in each horizontal band.
+    // Independent PIXI holes cannot represent overlapping or edge-crossing bounds.
+    const edges = [];
     for (const bounds of this.visibleBounds.values()) {
-      this.mask
-        .beginHole()
-        .drawRect(bounds.x, bounds.y, bounds.width, bounds.height)
-        .endHole();
+      const span = {
+        left: Math.max(rect.x, bounds.x),
+        right: Math.min(right, bounds.x + bounds.width)
+      };
+      const top = Math.max(rect.y, bounds.y);
+      const end = Math.min(bottom, bounds.y + bounds.height);
+      if (span.left < span.right && top < end)
+        edges.push(
+          { y: top, span, enter: true },
+          { y: end, span, enter: false }
+        );
+    }
+    edges.sort((a, b) => a.y - b.y);
+    /** @type {Set<{left: number, right: number}>} */
+    const active = new Set();
+    let y = rect.y;
+    let index = 0;
+    while (y < bottom) {
+      while (edges[index]?.y === y) {
+        const { span, enter } = edges[index++];
+        if (enter) active.add(span);
+        else active.delete(span);
+      }
+      const nextY = edges[index]?.y ?? bottom;
+      const spans = [...active].sort((a, b) => a.left - b.left);
+      let x = rect.x;
+      for (const span of spans) {
+        if (span.left > x) this.mask.drawRect(x, y, span.left - x, nextY - y);
+        x = Math.max(x, span.right);
+        if (x === right) break;
+      }
+      if (x < right) this.mask.drawRect(x, y, right - x, nextY - y);
+      y = nextY;
     }
     this.mask.endFill();
     this.maskRect = {

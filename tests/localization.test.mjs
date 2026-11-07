@@ -5,9 +5,10 @@ import { localize, format, snapshotName } from "../scripts/localization.js";
 import { installModule } from "../scripts/lifecycle.js";
 import { runtimeHost, token } from "./helpers/runtime.mjs";
 const ID = "probably-just-a-rat";
+const locales = ["en", "ru", "pt-BR", "pt-PT"];
 const dictionaries = Object.fromEntries(
   await Promise.all(
-    ["en", "ru"].map(async language => [
+    locales.map(async language => [
       language,
       JSON.parse(
         await readFile(
@@ -19,8 +20,8 @@ const dictionaries = Object.fromEntries(
   )
 );
 
-for (const language of ["en", "ru"])
-  test(`default module language follows Foundry without an extra dictionary fetch (${language})`, async () => {
+for (const language of locales)
+  test(`default module language follows Foundry without an extra dictionary fetch (${language})`, async t => {
     const f = runtimeHost();
     const strings = dictionaries[language];
     const native = key => strings[key] ?? key;
@@ -29,9 +30,9 @@ for (const language of ["en", "ru"])
       native(key).replace(/\{([^}]+)\}/g, (_match, name) =>
         String(values[name])
       );
-    f.host.fetch = () => {
+    const fetch = t.mock.method(globalThis, "fetch", async () => {
       throw new Error("Module must not load its own dictionaries");
-    };
+    });
     const get = f.host.game.settings.get;
     f.host.game.settings.get = (namespace, key) => {
       assert.notEqual(
@@ -68,6 +69,7 @@ for (const language of ["en", "ru"])
     assert.equal(snapshotName(f.host, ""), strings["RAT.Unknown"]);
     assert.equal(snapshotName(f.host, "RAT.Unknown"), "RAT.Unknown");
     assert.equal(f.host.game.i18n.localize, native);
+    assert.equal(fetch.mock.callCount(), 0);
     assert.equal(f.menus.size, 0);
     assert.equal(f.settings.size, 17);
     assert.equal(

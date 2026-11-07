@@ -477,6 +477,55 @@ test("later Plain ghosts coexist with the first and rediscover independently", a
   expect(errors).toEqual([]);
 });
 
+test("mask clips the union of overlapping and edge-crossing visible token bounds", async ({
+  page
+}) => {
+  await page.goto("/");
+  await page.waitForFunction(() => window.__ratFixture?.tracker.renderer.root);
+  const alpha = await page.evaluate(() => {
+    const { renderer, host } = __ratFixture.tracker;
+    const { canvas } = host;
+    const { renderer: pixi } = canvas.app;
+    renderer.visibleBounds.set("first", {
+      x: 20,
+      y: 20,
+      width: 40,
+      height: 40
+    });
+    renderer.visibleBounds.set("second", {
+      x: 40,
+      y: 40,
+      width: 40,
+      height: 40
+    });
+    renderer.visibleBounds.set("edge", {
+      x: -10,
+      y: 85,
+      width: 20,
+      height: 30
+    });
+    renderer.maskDirty = true;
+    renderer.updateMask();
+    renderer.root.addChild(
+      new PIXI.Graphics().beginFill(0xffffff).drawRect(0, 0, 100, 100).endFill()
+    );
+    const target = pixi.generateTexture(canvas.interface, {
+      region: new PIXI.Rectangle(0, 0, 100, 100)
+    });
+    const pixels = pixi.extract.pixels(target);
+    target.destroy(true);
+    return [
+      [5, 5],
+      [30, 30],
+      [50, 50],
+      [70, 70],
+      [5, 95],
+      [95, 95]
+    ].map(([x, y]) => pixels[(y * 100 + x) * 4 + 3]);
+  });
+  expect(alpha).toEqual([255, 0, 0, 0, 0, 255]);
+});
+
 test("remembered ping preserves coordinates and the high-contrast caption remains live", async ({
   page
 }) => {

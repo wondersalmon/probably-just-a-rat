@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { releaseFiles } from "./files.mjs";
 import { releaseNotes } from "./release-notes.mjs";
 import { validateChangelogs } from "./changelog.mjs";
+import { LANGUAGE_CHOICES } from "../scripts/localization.js";
 
 export async function validate(root) {
   const json = async file =>
@@ -47,12 +48,29 @@ export async function validate(root) {
     ...manifest.languages.map(language => language.path)
   ])
     assert.ok(files.includes(file), `Missing runtime asset: ${file}`);
+  assert.deepEqual(
+    manifest.languages.map(({ lang }) => lang).sort(),
+    Object.keys(LANGUAGE_CHOICES)
+      .filter(lang => lang !== "foundry")
+      .sort()
+  );
   const en = await json("lang/en.json");
-  const ru = await json("lang/ru.json");
-  assert.deepEqual(Object.keys(en).sort(), Object.keys(ru).sort());
-  for (const language of [en, ru])
-    for (const value of Object.values(language))
-      assert.ok(typeof value === "string" && value.trim());
+  const keys = Object.keys(en).sort();
+  const placeholders = value => value.match(/\{[^}]+\}/g)?.sort() ?? [];
+  for (const { lang, path: file } of manifest.languages) {
+    assert.equal(file, `lang/${lang}.json`);
+    const dictionary = await json(file);
+    assert.deepEqual(Object.keys(dictionary).sort(), keys, file);
+    for (const key of keys) {
+      const value = dictionary[key];
+      assert.ok(typeof value === "string" && value.trim(), `${file}: ${key}`);
+      assert.deepEqual(
+        placeholders(value),
+        placeholders(en[key]),
+        `${file}: ${key}`
+      );
+    }
+  }
   for (const file of files.filter(file => file.startsWith("scripts/"))) {
     const source = await readFile(path.join(root, file), "utf8");
     for (const [, key] of source.matchAll(/["'`](RAT\.[A-Za-z.]+)["'`]/g))

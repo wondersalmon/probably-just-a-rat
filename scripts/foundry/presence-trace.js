@@ -10,7 +10,7 @@ export function createPresenceTrace(host, snapshot, appearance) {
   trace.name = "rat-presence-trace";
   trace.eventMode = "none";
   trace.interactiveChildren = false;
-  trace.position.set(snapshot.width / 2, snapshot.height / 2);
+  trace.position.set(snapshot.centerOffsetX, snapshot.centerOffsetY);
   trace.scale.set(Math.min(snapshot.width, snapshot.height) / 100);
   trace.angle = appearance.customMarkerRotate
     ? (snapshot.movementAngle ?? 0)

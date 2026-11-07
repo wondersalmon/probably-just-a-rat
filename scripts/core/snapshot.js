@@ -24,7 +24,9 @@ export function freezeSnapshot(input, observedAt, combat, movementAngle = 0) {
     imageWidth = width,
     imageHeight = height,
     anchorX = 0.5,
-    anchorY = 0.5
+    anchorY = 0.5,
+    centerOffsetX = width / 2,
+    centerOffsetY = height / 2
   } = input;
   if (
     ![
@@ -39,6 +41,8 @@ export function freezeSnapshot(input, observedAt, combat, movementAngle = 0) {
       imageHeight,
       anchorX,
       anchorY,
+      centerOffsetX,
+      centerOffsetY,
       movementAngle
     ].every(Number.isFinite) ||
     width <= 0 ||
@@ -65,6 +69,8 @@ export function freezeSnapshot(input, observedAt, combat, movementAngle = 0) {
     imageHeight,
     anchorX,
     anchorY,
+    centerOffsetX,
+    centerOffsetY,
     movementAngle: ((movementAngle % 360) + 360) % 360,
     observedAt,
     combat: combat ? Object.freeze({ ...combat }) : null

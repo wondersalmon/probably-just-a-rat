@@ -24,7 +24,7 @@ In **Scene Configuration → Visibility**, choose world rules, disable memory or
 
 ![Scene memory mode in the Visibility tab, with Long memory selected](media/memory-mode.webp)
 
-Settings include **Marker**, **Memory rules** and **Captions and pings**. **Marker** offers an appearance preview even without saved enemies. Under **General**, each player can choose the module language.
+Settings include **Marker**, **Memory rules** and **Captions and pings**. **Marker** offers an appearance preview even without saved enemies. Under **General**, each player can follow Foundry's language or choose English, Russian, Brazilian Portuguese or European Portuguese.
 
 For custom markers, select **Custom image** and choose an **Image file** in the module settings.
 

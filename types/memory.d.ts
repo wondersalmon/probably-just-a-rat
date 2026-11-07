@@ -21,6 +21,8 @@ export interface SnapshotInput {
   imageHeight?: number;
   anchorX?: number;
   anchorY?: number;
+  centerOffsetX?: number;
+  centerOffsetY?: number;
 }
 export interface CombatStamp {
   id: string;
@@ -28,6 +30,9 @@ export interface CombatStamp {
   turn: number | null;
 }
 export interface Snapshot extends SnapshotInput {
+  /** Offset from the observed top-left to the native token center. */
+  centerOffsetX: number;
+  centerOffsetY: number;
   /** Clockwise degrees from up, derived only from consecutive visual observations. */
   movementAngle: number;
   observedAt: number;

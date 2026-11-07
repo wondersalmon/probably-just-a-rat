@@ -78,8 +78,8 @@ export function createMemoryAPI(host, tracker, pings) {
       if (!record) return false;
       const s = record.snapshot;
       await host.canvas.animatePan({
-        x: s.x + s.width / 2,
-        y: s.y + s.height / 2
+        x: s.x + s.centerOffsetX,
+        y: s.y + s.centerOffsetY
       });
       return true;
     },

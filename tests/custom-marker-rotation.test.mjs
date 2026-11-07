@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MarkerRenderer } from "../scripts/foundry/marker-renderer.js";
+import { freezeSnapshot } from "../scripts/core/snapshot.js";
 import { resolveAppearance } from "../scripts/appearance.js";
 import { registerSettings } from "../scripts/settings.js";
 import { runtimeHost } from "./helpers/runtime.mjs";
@@ -85,21 +86,29 @@ for (const [style, artwork] of [
     renderer.mount();
     f.settings.get("markerStyle").value = style;
     f.settings.get("outline").value = true;
-    const snapshot = Object.freeze({
-      x: 20,
-      y: 30,
-      width: 100,
-      height: 80,
-      imageWidth: 90,
-      imageHeight: 70,
-      anchorX: 0.3,
-      anchorY: 0.7,
-      rotation: 123,
-      scaleX: -1,
-      scaleY: 1,
-      movementAngle: 90,
-      name: "Enemy"
-    });
+    const snapshot = freezeSnapshot(
+      {
+        x: 20,
+        y: 30,
+        width: 100,
+        height: 80,
+        imageWidth: 90,
+        imageHeight: 70,
+        anchorX: 0.3,
+        anchorY: 0.7,
+        centerOffsetX: 35,
+        centerOffsetY: 45,
+        rotation: 123,
+        scaleX: -1,
+        scaleY: 1,
+        levelId: "floor",
+        texture: null,
+        name: "Enemy"
+      },
+      0,
+      null,
+      90
+    );
     const record = { tokenId: "enemy", snapshot };
     const texture = { width: 200, height: 100 };
     if (artwork) {
@@ -117,8 +126,8 @@ for (const [style, artwork] of [
       const expected = enabled ? 90 : style === "ghost" && artwork ? 123 : 0;
       for (const child of art) {
         assert.equal(child.angle, expected);
-        assert.equal(child.position.x, snapshot.width / 2);
-        assert.equal(child.position.y, snapshot.height / 2);
+        assert.equal(child.position.x, snapshot.centerOffsetX);
+        assert.equal(child.position.y, snapshot.centerOffsetY);
       }
       assert.equal(marker.snapshot, snapshot);
       assert.deepEqual(
@@ -127,6 +136,7 @@ for (const [style, artwork] of [
       );
       assert.equal(marker.container.angle ?? 0, 0);
       assert.equal(marker.caption.angle ?? 0, 0);
+      assert.equal(marker.caption.position.x, snapshot.centerOffsetX);
       assert.equal(marker.caption.position.y, snapshot.height + 6);
     }
   });

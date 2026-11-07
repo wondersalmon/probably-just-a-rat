@@ -39,7 +39,20 @@ test("unchanged bounds and TTL-style sync do not rebuild the mask; removal, resi
   const renderer = new MarkerRenderer(f.host);
   const enemy = token(f.host);
   renderer.trackVisibility(enemy, true);
+  const snapshot = new ObservationTracker(
+    f.host,
+    new MemoryStore()
+  ).adapter.snapshot(enemy);
+  const records = [
+    {
+      tokenId: "remembered",
+      state: "remembered",
+      snapshot: { ...snapshot, movementAngle: 0, combat: null }
+    }
+  ];
   renderer.sync([]);
+  assert.equal(renderer.maskDirty, true);
+  renderer.sync(records);
   const mask = renderer.mask;
   let clears = 0;
   const clear = mask.clear.bind(mask);
@@ -47,27 +60,27 @@ test("unchanged bounds and TTL-style sync do not rebuild the mask; removal, resi
     clears++;
     return clear();
   };
-  renderer.sync([]);
+  renderer.sync(records);
   renderer.trackVisibility(enemy, true);
-  renderer.sync([]);
+  renderer.sync(records);
   assert.equal(clears, 0);
   enemy.position.x += 10;
   renderer.trackVisibility(enemy, true);
-  renderer.sync([]);
+  renderer.sync(records);
   assert.equal(clears, 1);
   renderer.forgetVisibility(enemy.document.id);
-  renderer.sync([]);
+  renderer.sync(records);
   renderer.forgetVisibility(enemy.document.id);
-  renderer.sync([]);
+  renderer.sync(records);
   assert.equal(clears, 2);
   f.host.canvas.dimensions.rect.width += 50;
-  renderer.sync([]);
+  renderer.sync(records);
   assert.equal(clears, 3);
   renderer.clear();
   assert.equal(renderer.maskDirty, true);
   assert.equal(renderer.maskRect, null);
   assert.equal(mask.destroyed, true);
-  renderer.sync([]);
+  renderer.sync(records);
   assert.notEqual(renderer.mask, mask);
   assert.equal(renderer.maskDirty, false);
   renderer.clear();

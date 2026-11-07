@@ -2,7 +2,7 @@
   "id": "probably-just-a-rat",
   "title": "Probably Just a Rat",
   "description": "Client-local markers for the last visually observed position of enemies. System-independent, Foundry VTT 14.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "compatibility": { "minimum": "14", "verified": "14", "maximum": "14" },
   "authors": [{ "name": "wondersalmon" }],
   "url": "https://github.com/wondersalmon/probably-just-a-rat",
@@ -10,6 +10,16 @@
   "styles": ["styles/control-panel.css"],
   "languages": [
     { "lang": "en", "name": "English", "path": "lang/en.json" },
-    { "lang": "ru", "name": "Русский", "path": "lang/ru.json" }
+    { "lang": "ru", "name": "Русский", "path": "lang/ru.json" },
+    {
+      "lang": "pt-BR",
+      "name": "Português (Brasil)",
+      "path": "lang/pt-BR.json"
+    },
+    {
+      "lang": "pt-PT",
+      "name": "Português (Portugal)",
+      "path": "lang/pt-PT.json"
+    }
   ]
 }

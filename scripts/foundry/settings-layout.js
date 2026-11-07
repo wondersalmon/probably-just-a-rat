@@ -1,7 +1,11 @@
 import { MODULE_ID } from "../constants.js";
 import { resolveAppearance, resolveCaptionStyle } from "../appearance.js";
 import { isMemoryDurationValid } from "../settings.js";
-import { localize as translate, format } from "../localization.js";
+import {
+  localize as translate,
+  format,
+  LANGUAGE_CHOICES
+} from "../localization.js";
 import { openCurrentSceneMemorySettings } from "./scene-config.js";
 import { encounterMemory, memoryTextKey } from "../system-profile.js";
 
@@ -376,11 +380,7 @@ export function updateSceneMemoryLink(host, root) {
 export function translateSettings(host, root) {
   /** @type {Record<string, Record<string, string>>} */
   const choices = {
-    language: {
-      foundry: "RAT.Language.Foundry",
-      en: "RAT.Language.English",
-      ru: "RAT.Language.Russian"
-    },
+    language: LANGUAGE_CHOICES,
     markerStyle: {
       ghost: "RAT.MarkerStyle.Ghost",
       footprints: "RAT.MarkerStyle.Footprints",

@@ -54,7 +54,7 @@ export class CombatMemoryPing {
     event.preventDefault();
     event.stopImmediatePropagation();
     const s = record.snapshot;
-    const position = { x: s.x + s.width / 2, y: s.y + s.height / 2 };
+    const position = { x: s.x + s.centerOffsetX, y: s.y + s.centerOffsetY };
     const audience = game.settings.get(MODULE_ID, "sharePings");
     const shared = audience === true || audience === "true";
     try {

@@ -76,7 +76,11 @@ export class VisibilityAdapter {
         sourceIds: sources.map(([id]) => String(id)),
         mode: JSON.stringify(
           sources
-            .map(([id, source]) => [id, source.visionMode?.id ?? "basic"])
+            // Temporary blindness changes the effective mode, not the source configuration.
+            .map(([id, source]) => [
+              id,
+              source.data?.visionMode ?? source.visionMode?.id ?? "basic"
+            ])
             .sort()
         ),
         permissionKey: JSON.stringify([
@@ -118,10 +122,14 @@ export class VisibilityAdapter {
     if (!mesh.renderable) return this.reject("mesh-not-renderable");
     if (mesh.alpha === 0) return this.reject("transparent-mesh");
     const { x, y } = token.position;
+    const center = token.getCenterPoint?.({ x, y }) ?? {
+      x: x + token.w / 2,
+      y: y + token.h / 2
+    };
     // During asynchronous redraw or native animation updates, refuse an inconsistent representation.
     if (
-      Math.abs(mesh.position.x - (x + token.w / 2)) > 0.01 ||
-      Math.abs(mesh.position.y - (y + token.h / 2)) > 0.01
+      Math.abs(mesh.position.x - center.x) > 0.01 ||
+      Math.abs(mesh.position.y - center.y) > 0.01
     )
       return this.reject("mesh-position-mismatch");
     const points = doc.getVisibilityTestPoints({
@@ -210,6 +218,8 @@ export class VisibilityAdapter {
       y: token.position.y,
       width: token.w,
       height: token.h,
+      centerOffsetX: mesh.position.x - token.position.x,
+      centerOffsetY: mesh.position.y - token.position.y,
       rotation: mesh.angle,
       scaleX: Math.sign(mesh.scale.x) || 1,
       scaleY: Math.sign(mesh.scale.y) || 1,

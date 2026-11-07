@@ -15,7 +15,7 @@ export class LocalMemoryCache {
     this.now = now;
   }
   lastWrite = -Infinity;
-  lastRetainedWrite = -Infinity;
+  lastRetainedAttempt = -Infinity;
   lastRetainedContext = "";
   warned = false;
 
@@ -46,9 +46,8 @@ export class LocalMemoryCache {
   }
 
   /** @returns {Record<string, {savedAt: number, state: import("../types/memory.js").MemoryCheckpoint, images: Record<string, string>}>} */
-  retainedEntries() {
-    const key = this.key();
-    const raw = key && this.host.localStorage?.getItem(`${key}:retained`);
+  retainedEntries(key = this.key(), storage = this.host.localStorage) {
+    const raw = key && storage?.getItem(`${key}:retained`);
     if (!raw || raw.length > MAX_SIZE) return Object.create(null);
     const saved = JSON.parse(raw);
     return saved.version === 1 &&
@@ -64,18 +63,23 @@ export class LocalMemoryCache {
    */
   saveRetained(store, renderer, force = true) {
     const key = this.key();
-    if (!key || !this.host.localStorage) return;
-    const state = store.checkpoint();
-    if (!state.contextKey) return;
+    const context = store.contextKey;
+    if (!key || !context) return;
+    const now = this.now();
     if (
       !force &&
-      state.contextKey === this.lastRetainedContext &&
-      this.now() - this.lastRetainedWrite < 500
+      context === this.lastRetainedContext &&
+      now - this.lastRetainedAttempt < 500
     )
       return;
+    this.lastRetainedAttempt = now;
+    this.lastRetainedContext = context;
     try {
-      const entries = this.retainedEntries();
-      delete entries[state.contextKey];
+      const storage = this.host.localStorage;
+      if (!storage) return;
+      const state = store.checkpoint();
+      const entries = this.retainedEntries(key, storage);
+      delete entries[context];
       if (state.records.length) {
         /** @type {Record<string, string>} */
         const images = Object.create(null);
@@ -87,7 +91,7 @@ export class LocalMemoryCache {
             size += image.length;
           }
         }
-        entries[state.contextKey] = { savedAt: this.now(), state, images };
+        entries[context] = { savedAt: now, state, images };
       }
       const ordered = Object.entries(entries)
         .reverse()
@@ -100,11 +104,8 @@ export class LocalMemoryCache {
       }
       if (data.length > MAX_SIZE)
         throw new Error("Retained checkpoint too large");
-      if (Object.keys(bounded).length)
-        this.host.localStorage.setItem(`${key}:retained`, data);
-      else this.host.localStorage.removeItem(`${key}:retained`);
-      this.lastRetainedWrite = this.now();
-      this.lastRetainedContext = state.contextKey;
+      if (Object.keys(bounded).length) storage.setItem(`${key}:retained`, data);
+      else storage.removeItem(`${key}:retained`);
     } catch {
       // Failed updates must not resurrect a manually forgotten position.
       this.clearRetained();

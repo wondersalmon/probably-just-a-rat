@@ -1,5 +1,6 @@
 import { MODULE_ID, MEMORY_DEFAULTS } from "./constants.js";
 import { DEFAULT_OUTLINE_COLOR } from "./appearance.js";
+import { LANGUAGE_CHOICES } from "./localization.js";
 import {
   encounterMemory,
   isDaggerheart,
@@ -24,11 +25,7 @@ export function registerSettings(
       key: "language",
       type: String,
       default: "foundry",
-      choices: {
-        foundry: "RAT.Language.Foundry",
-        en: "RAT.Language.English",
-        ru: "RAT.Language.Russian"
-      }
+      choices: { ...LANGUAGE_CHOICES }
     },
     {
       key: "markerStyle",

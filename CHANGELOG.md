@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.1
+
+### New
+
+- **Portuguese localization:** Choose Brazilian Portuguese or European Portuguese under General → Module language, or follow the Foundry language.
+
+### Changes and improvements
+
+- **Observation performance:** Mass loss of sight now avoids scanning all memory records for each target. Long memory checks its write interval before building a checkpoint.
+
+### Fixes
+
+- **Vision and combat:** Temporary blindness, including magical darkness, preserves last-seen positions. Switching Combat only during an active combat preserves existing markers.
+- **Hex tokens and marker layering:** Markers, pings and camera centering use the token's last observed center on asymmetric hex shapes. Overlapping visible tokens correctly occlude remembered markers.
+- **Local storage:** Long memory continues to work for the session when browser storage is blocked. Saved checkpoints prioritize remembered positions over newer visible observations.
+- **Language switching:** The open memory panel updates its title when the module language changes. If a selected dictionary fails to load, the interface returns to the Foundry language.
+
+Documentation: [Module documentation](https://github.com/wondersalmon/probably-just-a-rat/blob/main/README.md) · [Changelog in Russian](https://github.com/wondersalmon/probably-just-a-rat/blob/HEAD/CHANGELOG.ru.md#031).
+
 ## 0.3.0
 
 ### New

@@ -53,12 +53,11 @@ export function installModule(host) {
   const checkpoint = () => tracker.checkpoint(true);
   const refreshLanguage = () => {
     void configureLocalization(host)
-      .then(() => {
+      .finally(() => {
         if (disposed) return;
         settingsPreview.refreshLanguage();
         tracker.renderer.refreshCaptions();
         tracker.notifyMemory(true);
-        if (controlPanel.open) controlPanel.window?.render({ force: true });
         host.ui.controls?.render?.({ force: true });
       })
       .catch(() => {
@@ -83,11 +82,14 @@ export function installModule(host) {
       return;
     }
     if (key === "combatOnly") {
-      if (sceneRetainsMemory(host.canvas?.scene)) tracker.schedule();
-      else {
+      if (
+        host.game.settings.get(MODULE_ID, "combatOnly") &&
+        !sceneRetainsMemory(host.canvas?.scene) &&
+        !tracker.adapter.combat()
+      ) {
         tracker.cache.clear();
         tracker.reset();
-      }
+      } else tracker.schedule();
       return;
     }
     if (key === "captionStyle") settingsPreview.refreshCaptionPolicy();

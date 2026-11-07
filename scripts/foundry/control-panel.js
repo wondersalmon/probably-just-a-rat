@@ -61,12 +61,14 @@ export class RatControlPanel {
         id: "rat-memory-controls",
         classes: ["rat-memory-controls"],
         window: {
-          title: localize(panel.host, "RAT.Controls.Title"),
           icon: "fa-solid fa-mouse-field",
           resizable: false
         },
         position: { width: 310, height: "auto", left: 85, top: 100 }
       };
+      get title() {
+        return localize(panel.host, "RAT.Controls.Title");
+      }
       async _renderHTML() {
         return panel.build();
       }
@@ -132,9 +134,9 @@ export class RatControlPanel {
 
   refresh() {
     if (!this.open || this.disposed) return;
-    void Promise.resolve(this.window.render({ force: true })).catch(() =>
-      this.warn()
-    );
+    void Promise.resolve(
+      this.window.render({ force: true, window: { title: this.window.title } })
+    ).catch(() => this.warn());
   }
 
   /** @param {string} key @param {string} action @param {string} icon */

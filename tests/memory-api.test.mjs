@@ -7,11 +7,12 @@ import { registerSettings } from "../scripts/settings.js";
 import { CombatMemoryPing } from "../scripts/combat-memory-ping.js";
 import { createMemoryAPI } from "../scripts/memory-api.js";
 
-function fixture() {
+function fixture(configureEnemy = () => {}) {
   const f = runtimeHost();
   const tracker = new ObservationTracker(f.host, new MemoryStore());
   registerSettings(f.host.game.settings, () => tracker.notifyMemory(true));
   const enemy = token(f.host);
+  configureEnemy(enemy);
   const unknown = token(f.host, "unknown");
   unknown.visible = unknown.visual = false;
   const shared = [],
@@ -72,6 +73,29 @@ test("public memory API prepares frozen local records and delegates remembered a
   assert.equal(f.api.forget(record.id), true);
   assert.deepEqual(f.api.list(), []);
   assert.equal(f.api.ping(record.id, event), false);
+  f.controller.dispose();
+  f.tracker.suspend();
+});
+
+test("asymmetric token snapshots retain the native center for art, pings and the camera", async () => {
+  const f = fixture(enemy => {
+    enemy.getCenterPoint = ({ x, y }) => ({ x: x + 35, y: y + 60 });
+    enemy.mesh.position = { x: 55, y: 90 };
+  });
+  const marker = f.tracker.renderer.markers.get("enemy");
+  assert.equal(marker.snapshot.x, 20);
+  assert.equal(marker.snapshot.y, 30);
+  assert.equal(marker.container.children[0].position.x, 35);
+  assert.equal(marker.container.children[0].position.y, 60);
+  const [record] = f.api.list();
+  f.enemy.getCenterPoint = () => {
+    throw new Error("Hidden center read");
+  };
+  f.enemy.mesh.position.x += 100;
+  assert.equal(f.api.ping(record.id, event), true);
+  assert.equal(await f.api.center(record.id), true);
+  assert.deepEqual(f.shared, [[{ x: 55, y: 90 }]]);
+  assert.deepEqual(f.pans, [{ x: 55, y: 90 }]);
   f.controller.dispose();
   f.tracker.suspend();
 });

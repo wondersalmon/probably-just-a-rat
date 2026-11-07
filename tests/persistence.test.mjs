@@ -179,6 +179,12 @@ test("retained checkpoints throttle frame writes but force departures, and toler
   let time = 1000;
   const cache = new LocalMemoryCache(f.host, () => time);
   let writes = 0;
+  let checkpoints = 0;
+  const checkpoint = f.store.checkpoint.bind(f.store);
+  f.store.checkpoint = () => {
+    checkpoints++;
+    return checkpoint();
+  };
   const save = data.setItem;
   data.setItem = (key, value) => {
     writes++;
@@ -188,11 +194,13 @@ test("retained checkpoints throttle frame writes but force departures, and toler
   f.store.loseSight("enemy");
   cache.saveRetained(f.store, f.tracker.renderer, false);
   assert.equal(writes, 1);
+  assert.equal(checkpoints, 1);
   cache.saveRetained(f.store, f.tracker.renderer, true);
   assert.equal(writes, 2);
   time += 500;
   cache.saveRetained(f.store, f.tracker.renderer, false);
   assert.equal(writes, 3);
+  assert.equal(checkpoints, 3);
   const key = `${cache.key()}:retained`;
   const saved = JSON.parse(data.getItem(key));
   const contextKey = f.store.checkpoint().contextKey;
@@ -204,17 +212,70 @@ test("retained checkpoints throttle frame writes but force departures, and toler
   assert.equal(cache.readRetained(contextKey), null);
 });
 
+test("denied localStorage leaves long-memory observation and markers active for the session", () => {
+  const f = boot(storage());
+  Object.defineProperty(f.host, "localStorage", {
+    get() {
+      throw new DOMException("Storage disabled", "SecurityError");
+    }
+  });
+  f.host.canvas.scene.getFlag = (_namespace, key) =>
+    key === "memoryMode" ? "long" : undefined;
+  f.update();
+  f.enemy.visible = f.enemy.visual = false;
+  f.update();
+  f.tracker.checkpoint(true);
+  assert.equal(f.tracker.failed, false);
+  assert.equal(f.tracker.renderer.markers.size, 1);
+  assert.deepEqual(f.warnings, ["RAT.CacheUnavailable"]);
+  f.tracker.suspend();
+});
+
+test("long-memory reload retains a marker ahead of more recent visible observations", () => {
+  const data = storage();
+  const mode = (_namespace, key) => (key === "memoryMode" ? "long" : undefined);
+  const a = boot(data);
+  a.host.canvas.scene.getFlag = mode;
+  a.update();
+  a.enemy.visual = a.enemy.visible = false;
+  a.update();
+  const b = boot(data);
+  for (let index = 0; index < 100; index++) {
+    token(a.host, `visible-${index}`);
+    token(b.host, `visible-${index}`);
+  }
+  a.update();
+  a.tracker.checkpoint(true);
+  b.host.canvas.scene.getFlag = mode;
+  b.enemy.visual = b.enemy.visible = false;
+  b.update();
+  assert.deepEqual(
+    b.store.remembered().map(record => record.tokenId),
+    ["enemy"]
+  );
+  assert.equal(b.store.size, 101);
+  a.tracker.suspend();
+  b.tracker.suspend();
+});
+
 test("reload preserves frozen footprint heading, accepts old checkpoints and rejects corrupt angles", () => {
   const old = new MemoryStore();
   old.setContext(context);
   old.observe("enemy", visual);
-  old.observe("enemy", { ...visual, x: 40 });
+  old.observe("enemy", {
+    ...visual,
+    x: 40,
+    centerOffsetX: 35,
+    centerOffsetY: 60
+  });
   old.loseSight("enemy");
   const saved = old.checkpoint();
   const fresh = new MemoryStore();
   fresh.setContext(context);
   fresh.restore(saved, 0);
   assert.equal(fresh.get("enemy").snapshot.movementAngle, 90);
+  assert.equal(fresh.get("enemy").snapshot.centerOffsetX, 35);
+  assert.equal(fresh.get("enemy").snapshot.centerOffsetY, 60);
   fresh.observe("enemy", { ...visual, x: 1000, y: 1000 });
   assert.equal(fresh.get("enemy").snapshot.movementAngle, 0);
   for (const movementAngle of [NaN, Infinity, "90"]) {
@@ -226,10 +287,14 @@ test("reload preserves frozen footprint heading, accepts old checkpoints and rej
     assert.equal(rejected.size, 0);
   }
   delete saved.records[0].snapshot.movementAngle;
+  delete saved.records[0].snapshot.centerOffsetX;
+  delete saved.records[0].snapshot.centerOffsetY;
   const legacy = new MemoryStore();
   legacy.setContext(context);
   legacy.restore(saved, 0);
   assert.equal(legacy.get("enemy").snapshot.movementAngle, 0);
+  assert.equal(legacy.get("enemy").snapshot.centerOffsetX, 50);
+  assert.equal(legacy.get("enemy").snapshot.centerOffsetY, 50);
 });
 
 test("overland checkpoints survive F5 across combat changes without relaxing the normal scene rules", () => {

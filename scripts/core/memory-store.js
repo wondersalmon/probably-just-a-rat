@@ -23,7 +23,12 @@ export class MemoryStore {
   }
 
   get size() {
+    this.expire();
     return this.#records.size;
+  }
+
+  get contextKey() {
+    return this.#context?.key ?? "";
   }
 
   #time() {
@@ -118,7 +123,6 @@ export class MemoryStore {
           combatAgeFrom: this.#combat ? this.#roundHighWater : null
         })
       );
-      this.expire();
     }
   }
 
@@ -149,6 +153,7 @@ export class MemoryStore {
     )
       throw new TypeError("Invalid combat stamp.");
     const previous = this.#combat;
+    const previousHighWater = this.#roundHighWater;
     if (combat?.id !== previous?.id && !this.#policy.retainUntilRediscovered) {
       if (combat || this.#policy.clearOnCombatEnd) this.clear();
       else {
@@ -164,31 +169,42 @@ export class MemoryStore {
         : combat.round
       : 0;
     this.#combat = combat ? { ...combat } : null;
-    this.expire();
+    if (
+      combat?.id !== previous?.id ||
+      this.#roundHighWater !== previousHighWater
+    )
+      this.expire();
+  }
+
+  /** @param {Readonly<import("../../types/memory.js").MemoryRecord>} record @param {number} now */
+  #isExpired(record, now) {
+    if (this.#policy.retainUntilRediscovered || record.state !== "remembered")
+      return false;
+    const seenCombat = record.snapshot.combat;
+    return this.#combat && seenCombat?.id === this.#combat.id
+      ? this.#policy.combatRounds > 0 &&
+          this.#roundHighWater >=
+            (record.combatAgeFrom ?? seenCombat.round) +
+              this.#policy.combatRounds
+      : this.#policy.seconds > 0 &&
+          now - record.expiresFrom >= this.#policy.seconds * 1000;
   }
 
   expire() {
     const now = this.#time();
     if (this.#policy.retainUntilRediscovered) return;
-    for (const [id, record] of this.#records) {
-      if (record.state !== "remembered") continue;
-      const seenCombat = record.snapshot.combat;
-      const expired =
-        this.#combat && seenCombat?.id === this.#combat.id
-          ? this.#policy.combatRounds > 0 &&
-            this.#roundHighWater >=
-              (record.combatAgeFrom ?? seenCombat.round) +
-                this.#policy.combatRounds
-          : this.#policy.seconds > 0 &&
-            now - record.expiresFrom >= this.#policy.seconds * 1000;
-      if (expired) this.#records.delete(id);
-    }
+    for (const [id, record] of this.#records)
+      if (this.#isExpired(record, now)) this.#records.delete(id);
   }
 
   /** @param {string} tokenId */
   get(tokenId) {
-    this.expire();
-    return this.#records.get(tokenId);
+    const record = this.#records.get(tokenId);
+    if (record && this.#isExpired(record, this.#time())) {
+      this.#records.delete(tokenId);
+      return undefined;
+    }
+    return record;
   }
   remembered() {
     return this.records().filter(record => record.state === "remembered");
@@ -216,11 +232,16 @@ export class MemoryStore {
   checkpoint() {
     const now = this.#time();
     return {
-      contextKey: this.#context?.key ?? "",
+      contextKey: this.contextKey,
       combat: this.#combat ? { ...this.#combat } : null,
       roundHighWater: this.#roundHighWater,
       records: this.records()
-        .sort((a, b) => b.snapshot.observedAt - a.snapshot.observedAt)
+        .sort(
+          (a, b) =>
+            Number(b.state === "remembered") -
+              Number(a.state === "remembered") ||
+            b.snapshot.observedAt - a.snapshot.observedAt
+        )
         .slice(0, 100)
         .map(record => ({
           tokenId: record.tokenId,

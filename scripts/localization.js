@@ -1,5 +1,13 @@
 import { MODULE_ID } from "./constants.js";
 
+export const LANGUAGE_CHOICES = Object.freeze({
+  foundry: "RAT.Language.Foundry",
+  en: "RAT.Language.English",
+  ru: "RAT.Language.Russian",
+  "pt-BR": "RAT.Language.PortugueseBrazil",
+  "pt-PT": "RAT.Language.PortuguesePortugal"
+});
+
 /** Explicit language overrides stay local to this module and this client.
  * @type {WeakMap<object, {language: string, dictionary: Record<string, string> | null, revision: number}>}
  */
@@ -10,7 +18,10 @@ const dictionaries = new Map();
 /** @param {import("../types/foundry.js").FoundryHost} host */
 export async function configureLocalization(host) {
   const value = host.game.settings.get(MODULE_ID, "language");
-  const language = value === "en" || value === "ru" ? value : "foundry";
+  const language =
+    typeof value === "string" && Object.hasOwn(LANGUAGE_CHOICES, value)
+      ? value
+      : "foundry";
   const previous = languages.get(host);
   const state = {
     language,

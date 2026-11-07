@@ -119,6 +119,8 @@
   "RAT.Language.Foundry": "Same as Foundry",
   "RAT.Language.English": "English",
   "RAT.Language.Russian": "Русский",
+  "RAT.Language.PortugueseBrazil": "Português (Brasil)",
+  "RAT.Language.PortuguesePortugal": "Português (Portugal)",
   "RAT.Settings.Menu.General": "General",
   "RAT.Settings.Sections.General": "General settings",
   "RAT.LanguageFailed": "Could not load the selected module language. Using the Foundry language for now.",

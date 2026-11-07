@@ -279,6 +279,39 @@ test("combat-only setting immediately clears ghosts and API handles, and turning
   controller.dispose();
 });
 
+test("changing combat-only mode during an active combat preserves the existing marker and handle", async () => {
+  const f = runtimeHost();
+  f.host.game.combat = {
+    id: "fight",
+    started: true,
+    scene: null,
+    round: 1,
+    turn: 0
+  };
+  const enemy = token(f.host);
+  const controller = installModule(f.host);
+  f.emit("init");
+  f.emit("ready");
+  f.frame();
+  enemy.visual = false;
+  f.emit("refreshToken", enemy);
+  f.frame();
+  const api = f.host.game.modules.get(MODULE_ID).api.memory;
+  const [record] = api.list();
+  const root = f.host.canvas.interface.children.find(
+    child => child.name === "probably-just-a-rat-memory"
+  );
+  const [marker] = root.children;
+  for (const value of [true, false]) {
+    await f.host.game.settings.set(MODULE_ID, "combatOnly", value);
+    assert.deepEqual(api.list(), [record]);
+    f.frame();
+    assert.deepEqual(api.list(), [record]);
+    assert.equal(root.children[0], marker);
+  }
+  controller.dispose();
+});
+
 test("elapsed-round captions start on loss, follow combat updates and obey the GM rule without rebuilding art", async () => {
   const f = runtimeHost();
   f.host.game.combat = {
