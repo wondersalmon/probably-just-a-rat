@@ -26,7 +26,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:ui
       - name: Check out pinned private release toolkit for trusted builds
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        if: github.actor != 'dependabot[bot]' && (github.event_name == 'push' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
         uses: actions/checkout@v7
         with:
           repository: wondersalmon/foundry-release-tools
@@ -36,17 +36,17 @@ jobs:
           persist-credentials: false
 
       - name: Install pinned toolkit dependencies
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        if: github.actor != 'dependabot[bot]' && (github.event_name == 'push' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
         run: npm ci --prefix dev/release-tools --omit=dev --ignore-scripts
 
       - name: Build and verify with shared toolkit
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        if: github.actor != 'dependabot[bot]' && (github.event_name == 'push' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))
         run: |
           npm run release:build
           npm run release:verify
 
-      - name: Build fork package without private credentials
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+      - name: Build package without private credentials
+        if: github.actor == 'dependabot[bot]' || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login == 'dependabot[bot]'))
         run: npm run build
       - uses: actions/upload-artifact@v7
         if: always()
