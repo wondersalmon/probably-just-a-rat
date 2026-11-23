@@ -31,7 +31,7 @@
     "release:build": "node dev/release-tools/bin/package.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "1.65.0",
+    "@playwright/test": "1.65.1",
     "pixi.js": "7.4.3",
     "archiver": "8.0.0",
     "eslint": "10.14.0",
